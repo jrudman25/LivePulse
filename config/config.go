@@ -33,10 +33,10 @@ type WorkerConfig struct {
 
 // DynamoDBConfig holds DynamoDB connection configuration
 type DynamoDBConfig struct {
-	Endpoint       string
-	Region         string
-	EventsTable    string
-	SessionsTable  string
+	Endpoint        string
+	Region          string
+	EventsTable     string
+	SessionsTable   string
 	MilestonesTable string
 }
 
@@ -62,7 +62,7 @@ func Load() (*Config, error) {
 		},
 		DynamoDB: DynamoDBConfig{
 			Endpoint:        getEnv("DYNAMODB_ENDPOINT", ""),
-			Region:          getEnv("AWS_REGION", "us-east-1"),
+			Region:          getEnv("AWS_REGION", "us-west-2"),
 			EventsTable:     getEnv("DYNAMODB_EVENTS_TABLE", "LivePulse_Events"),
 			SessionsTable:   getEnv("DYNAMODB_SESSIONS_TABLE", "LivePulse_Sessions"),
 			MilestonesTable: getEnv("DYNAMODB_MILESTONES_TABLE", "LivePulse_Milestones"),
