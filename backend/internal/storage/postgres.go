@@ -110,3 +110,73 @@ func (db *PostgresClient) Close() {
 		db.pool.Close()
 	}
 }
+
+// GetUpcomingEvents fetches events ordered by date
+func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int) ([]Event, error) {
+	query := `
+		SELECT id, type, title, start_time, end_time, external_api_id, created_at
+		FROM events
+		WHERE end_time > NOW()
+		ORDER BY start_time ASC
+		LIMIT $1
+	`
+	rows, err := db.pool.Query(ctx, query, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var events []Event
+	for rows.Next() {
+		var e Event
+		if err := rows.Scan(&e.ID, &e.Type, &e.Title, &e.StartTime, &e.EndTime, &e.ExternalAPIID, &e.CreatedAt); err != nil {
+			return nil, err
+		}
+		events = append(events, e)
+	}
+	return events, nil
+}
+
+// AddFavorite links a user to an event bookmark
+func (db *PostgresClient) AddFavorite(ctx context.Context, userID, eventID string) error {
+	query := `
+		INSERT INTO favorites (user_id, event_id)
+		VALUES ($1, $2)
+		ON CONFLICT (user_id, event_id) DO NOTHING
+	`
+	// Upsert the user into the database as a reference since Clerk handles auth natively
+	upsertUser := `INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`
+	_, _ = db.pool.Exec(ctx, upsertUser, userID)
+
+	_, err := db.pool.Exec(ctx, query, userID, eventID)
+	return err
+}
+
+// RemoveFavorite unlinks a user from an event bookmark
+func (db *PostgresClient) RemoveFavorite(ctx context.Context, userID, eventID string) error {
+	query := `
+		DELETE FROM favorites WHERE user_id = $1 AND event_id = $2
+	`
+	_, err := db.pool.Exec(ctx, query, userID, eventID)
+	return err
+}
+
+// GetUserFavorites fetches all favorites for a specific user
+func (db *PostgresClient) GetUserFavorites(ctx context.Context, userID string) ([]string, error) {
+	query := `SELECT event_id FROM favorites WHERE user_id = $1`
+	rows, err := db.pool.Query(ctx, query, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var eventIDs []string
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		eventIDs = append(eventIDs, id)
+	}
+	return eventIDs, nil
+}

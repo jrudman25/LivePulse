@@ -9,6 +9,7 @@ import (
 	"github.com/jrudman25/livepulse/internal/aggregation"
 	"github.com/jrudman25/livepulse/internal/events"
 	"github.com/jrudman25/livepulse/internal/milestones"
+	"github.com/jrudman25/livepulse/internal/storage"
 )
 
 // Server holds the API server dependencies
@@ -17,6 +18,7 @@ type Server struct {
 	aggManager *aggregation.Manager
 	tracker    *milestones.Tracker
 	wsHub      *WebSocketHub
+	db         *storage.PostgresClient
 }
 
 // NewServer creates a new API server
@@ -25,12 +27,14 @@ func NewServer(
 	aggManager *aggregation.Manager,
 	tracker *milestones.Tracker,
 	wsHub *WebSocketHub,
+	db *storage.PostgresClient,
 ) *Server {
 	return &Server{
 		eventQueue: eventQueue,
 		aggManager: aggManager,
 		tracker:    tracker,
 		wsHub:      wsHub,
+		db:         db,
 	}
 }
 
@@ -171,4 +175,73 @@ func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
 		"status": "healthy",
 		"time":   time.Now().UTC().Format(time.RFC3339),
 	})
+}
+
+// HandleGetLiveEvents surfaces Postgres events to the Next.js frontend
+func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 50)
+	if err != nil {
+		http.Error(w, "Failed to retrieve events", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(eventsData)
+}
+
+// FavoriteRequest represents the incoming JSON for favoriting
+type FavoriteRequest struct {
+	EventID string `json:"event_id"`
+}
+
+// HandleToggleFavorite toggles an event favorite natively on Postgres
+func (s *Server) HandleToggleFavorite(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost && r.Method != http.MethodDelete && r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userIDVal := r.Context().Value("user_id")
+	if userIDVal == nil {
+		http.Error(w, "Unauthorized context", http.StatusUnauthorized)
+		return
+	}
+	userID := userIDVal.(string)
+
+	if r.Method == http.MethodGet {
+		favorites, err := s.db.GetUserFavorites(r.Context(), userID)
+		if err != nil {
+			http.Error(w, "Failed to fetch favorites", http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(favorites)
+		return
+	}
+
+	var req FavoriteRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.EventID == "" {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	if r.Method == http.MethodPost {
+		if err := s.db.AddFavorite(r.Context(), userID, req.EventID); err != nil {
+			http.Error(w, "Failed to add favorite", http.StatusInternalServerError)
+			return
+		}
+	} else if r.Method == http.MethodDelete {
+		if err := s.db.RemoveFavorite(r.Context(), userID, req.EventID); err != nil {
+			http.Error(w, "Failed to remove favorite", http.StatusInternalServerError)
+			return
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]string{"status": "success"})
 }

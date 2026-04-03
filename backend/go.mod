@@ -3,6 +3,7 @@ module github.com/jrudman25/livepulse
 go 1.25.0
 
 require (
+	github.com/TwiN/go-away v1.8.1
 	github.com/clerk/clerk-sdk-go/v2 v2.5.1
 	github.com/google/uuid v1.5.0
 	github.com/gorilla/websocket v1.5.1

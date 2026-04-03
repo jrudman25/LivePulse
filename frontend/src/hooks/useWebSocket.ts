@@ -47,8 +47,11 @@ export function useWebSocket(sessionId: string) {
           try {
             const data: WSEvent = JSON.parse(event.data);
             if (data.type === "chat") {
-              // Append newly broadcasted messages in real-time
-              setMessages((prev) => [...prev, data.message]);
+              // Append newly broadcasted messages, preventing React Strict Mode duplicates
+              setMessages((prev) => {
+                if (prev.some(m => m.id === data.message.id)) return prev;
+                return [...prev, data.message];
+              });
             }
           } catch (e) {
             console.error("Failed to parse WS message", e);

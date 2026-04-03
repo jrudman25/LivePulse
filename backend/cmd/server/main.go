@@ -15,6 +15,7 @@ import (
 	"github.com/jrudman25/livepulse/internal/events"
 	"github.com/jrudman25/livepulse/internal/milestones"
 	"github.com/jrudman25/livepulse/internal/storage"
+	"github.com/TwiN/go-away"
 )
 
 func main() {
@@ -110,11 +111,14 @@ func main() {
 			}
 		} else if event.Type == events.EventTypeChat {
 			if text, ok := event.GetChatText(); ok {
+				// Censor profanity using go-away
+				cleanText := goaway.Censor(text)
+
 				chatMsg := &storage.ChatMessage{
 					ID:        event.ID,
 					UserID:    event.UserID,
 					SessionID: event.SessionID,
-					Text:      text,
+					Text:      cleanText,
 					Timestamp: event.Timestamp,
 				}
 				
@@ -140,7 +144,7 @@ func main() {
 	log.Printf("Worker pool started with %d workers", cfg.Worker.Count)
 
 	// Create API server
-	apiServer := api.NewServer(eventQueue, aggManager, tracker, wsHub)
+	apiServer := api.NewServer(eventQueue, aggManager, tracker, wsHub, pgClient)
 
 	// Set up HTTP routes
 	mux := http.NewServeMux()
@@ -153,6 +157,17 @@ func main() {
 	mux.HandleFunc("/api/sessions/join", api.Chain(apiServer.HandleJoinSession, api.LoggingMiddleware, api.CORSMiddleware, api.RecoveryMiddleware))
 	mux.HandleFunc("/api/sessions/stats", api.Chain(apiServer.HandleGetStats, api.LoggingMiddleware, api.CORSMiddleware, api.RecoveryMiddleware))
 	mux.HandleFunc("/api/sessions/milestones", api.Chain(apiServer.HandleGetMilestones, api.LoggingMiddleware, api.CORSMiddleware, api.RecoveryMiddleware))
+
+	// API integration routes
+	mux.HandleFunc("/api/events", api.Chain(apiServer.HandleGetLiveEvents, api.LoggingMiddleware, api.CORSMiddleware))
+	mux.HandleFunc("/api/favorites", api.Chain(apiServer.HandleToggleFavorite, api.LoggingMiddleware, api.CORSMiddleware, api.ClerkMiddleware))
+	
+	// Admin trigger for Ticketmaster
+	mux.HandleFunc("/api/admin/trigger-fetch", api.Chain(func(w http.ResponseWriter, r *http.Request) {
+		go apiFetcher.FetchAPIEvents()
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte(`{"status": "ticketmaster fetch triggered"}`))
+	}, api.LoggingMiddleware, api.CORSMiddleware))
 
 	// WebSocket
 	mux.HandleFunc("/ws", apiServer.HandleWebSocket)
