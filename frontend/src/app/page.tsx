@@ -1,10 +1,14 @@
 import EventCard from './EventCard';
+import { auth } from '@clerk/nextjs/server';
 
-async function fetchEvents() {
+async function fetchEvents(userId: string | null) {
   try {
+    const url = userId 
+      ? `http://localhost:8080/api/events?user_id=${userId}`
+      : 'http://localhost:8080/api/events';
+
     // Calling the Go Backend natively from a Next.js 15 Server Component!
-    // Using simple revalidate constraints so we don't bombard PostgreSQL on every page load
-    const res = await fetch('http://localhost:8080/api/events', { next: { revalidate: 30 } });
+    const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return [];
     
     const data = await res.json();
@@ -16,7 +20,8 @@ async function fetchEvents() {
 }
 
 export default async function Home() {
-  const events = await fetchEvents();
+  const { userId } = await auth();
+  const events = await fetchEvents(userId);
 
   return (
     <div className="container mx-auto p-4 md:p-8 mt-10">
