@@ -136,7 +136,8 @@ func (s *Server) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 
 	stats, exists := s.aggManager.GetSession(sessionID)
 	if !exists {
-		http.Error(w, "Session not found", http.StatusNotFound)
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]int{"active_connections": 0})
 		return
 	}
 
@@ -188,6 +189,21 @@ func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, "Failed to retrieve events", http.StatusInternalServerError)
 		return
+	}
+
+	// Dynamically inject favorite states if a user_id is provided
+	userID := r.URL.Query().Get("user_id")
+	if userID != "" {
+		favIDs, _ := s.db.GetUserFavorites(r.Context(), userID)
+		favMap := make(map[string]bool)
+		for _, fid := range favIDs {
+			favMap[fid] = true
+		}
+		for i := range eventsData {
+			if favMap[eventsData[i].ID] {
+				eventsData[i].IsFavorite = true
+			}
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/json")

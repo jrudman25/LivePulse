@@ -67,6 +67,17 @@ type TMEvent struct {
 			Name string `json:"name"`
 		} `json:"segment"`
 	} `json:"classifications"`
+	Embedded struct {
+		Venues []struct {
+			Name string `json:"name"`
+			City struct {
+				Name string `json:"name"`
+			} `json:"city"`
+			State struct {
+				StateCode string `json:"stateCode"`
+			} `json:"state"`
+		} `json:"venues"`
+	} `json:"_embedded"`
 }
 
 // FetchAPIEvents hits the Ticketmaster API and populates the DB
@@ -110,10 +121,22 @@ func (f *APIFetcher) FetchAPIEvents() {
 			eventType = tmEvent.Classifications[0].Segment.Name
 		}
 
+		locationStr := "TBA"
+		if len(tmEvent.Embedded.Venues) > 0 {
+			venue := tmEvent.Embedded.Venues[0]
+			if venue.Name != "" {
+				locationStr = venue.Name
+				if venue.City.Name != "" && venue.State.StateCode != "" {
+					locationStr = fmt.Sprintf("%s (%s, %s)", venue.Name, venue.City.Name, venue.State.StateCode)
+				}
+			}
+		}
+
 		e := storage.Event{
 			ID:            uuid.New().String(),
 			Type:          eventType,
 			Title:         tmEvent.Name,
+			Location:      locationStr,
 			StartTime:     startTime,
 			EndTime:       startTime.Add(3 * time.Hour), // TM strict end-times are often missing, 3 hours is a safe heuristic
 			ExternalAPIID: tmEvent.ID,
