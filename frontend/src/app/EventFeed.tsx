@@ -1,11 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useDebounce } from "use-debounce";
 import EventCard from "./EventCard";
 
 export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+
   const [filterType, setFilterType] = useState<string>("All");
   const [filterCountry, setFilterCountry] = useState<string>("All");
+  const [searchQuery, setSearchQuery] = useState<string>(searchParams.get("q") || "");
+  const [debouncedQuery] = useDebounce(searchQuery, 500);
+
+  const searchParamsString = searchParams.toString();
+
+  useEffect(() => {
+    const params = new URLSearchParams(searchParamsString);
+    if (debouncedQuery) {
+      params.set("q", debouncedQuery);
+    } else {
+      params.delete("q");
+    }
+    
+    // Extracted into a string, if the new URL parameters match the exact parameters currently live, we abort replacing
+    // to prevent circular useEffect infinite API polling!
+    const newQueryString = params.toString();
+    if (newQueryString !== searchParamsString) {
+      router.replace(`${pathname}?${newQueryString}`, { scroll: false });
+    }
+  }, [debouncedQuery, pathname, router, searchParamsString]);
 
   const types = ["All", ...Array.from(new Set(initialEvents.map(e => e.type)))];
   const countries = ["All", ...Array.from(new Set(initialEvents.map(e => e.country).filter(Boolean)))];
@@ -19,6 +45,15 @@ export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
   return (
     <div>
       <div className="flex flex-col sm:flex-row gap-4 mb-8">
+         <div className="flex-1 flex flex-col gap-1">
+           <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1">Search Events</label>
+           <input 
+              type="text"
+              placeholder="Search by title..."
+              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500 transition-all font-medium w-full"
+              value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+           />
+         </div>
          <div className="flex flex-col gap-1">
            <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1">Event Type</label>
            <select 

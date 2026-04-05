@@ -9,6 +9,15 @@ jest.mock('./EventCard', () => {
   };
 });
 
+// Mock Next.js navigation hooks to prevent Jest router invariant crash
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({
+    replace: jest.fn(),
+  }),
+  usePathname: () => '/',
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 const mockEvents = [
   { id: '1', type: 'Music', title: 'Coachella', country: 'US', location: 'California' },
   { id: '2', type: 'Sports', title: 'World Cup', country: 'CA', location: 'Toronto' }

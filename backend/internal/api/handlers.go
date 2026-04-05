@@ -185,14 +185,16 @@ func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 50)
+	userID := r.URL.Query().Get("user_id")
+	q := r.URL.Query().Get("q")
+	
+	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 50, q)
 	if err != nil {
 		http.Error(w, "Failed to retrieve events", http.StatusInternalServerError)
 		return
 	}
 
 	// Dynamically inject favorite states if a user_id is provided
-	userID := r.URL.Query().Get("user_id")
 	if userID != "" {
 		favIDs, _ := s.db.GetUserFavorites(r.Context(), userID)
 		favMap := make(map[string]bool)

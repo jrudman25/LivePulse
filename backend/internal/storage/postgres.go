@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -120,15 +121,30 @@ func (db *PostgresClient) Close() {
 }
 
 // GetUpcomingEvents fetches events ordered by date
-func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int) ([]Event, error) {
-	query := `
-		SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
-		FROM events
-		WHERE end_time > NOW()
-		ORDER BY start_time ASC
-		LIMIT $1
-	`
-	rows, err := db.pool.Query(ctx, query, limit)
+func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, searchQuery string) ([]Event, error) {
+	var rows pgx.Rows
+	var err error
+
+	if searchQuery != "" {
+		query := `
+			SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
+			FROM events
+			WHERE end_time > NOW() AND title ILIKE '%' || $1 || '%'
+			ORDER BY start_time ASC
+			LIMIT $2
+		`
+		rows, err = db.pool.Query(ctx, query, searchQuery, limit)
+	} else {
+		query := `
+			SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
+			FROM events
+			WHERE end_time > NOW()
+			ORDER BY start_time ASC
+			LIMIT $1
+		`
+		rows, err = db.pool.Query(ctx, query, limit)
+	}
+
 	if err != nil {
 		return nil, err
 	}
