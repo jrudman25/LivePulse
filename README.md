@@ -38,3 +38,4 @@ Chat messages are fired at a phenomenal rate during live events, representing a 
 **Backend:** Go (Golang), WebSockets (`gorilla/websocket`), Go-Cron
 **Databases:** Neon (PostgreSQL), Upstash (Redis)
 **Authentication:** Clerk JWT Middleware
+**Testing:** Jest, Go Test (Testify)
