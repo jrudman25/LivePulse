@@ -152,13 +152,14 @@ func (c *Client) readPump(eventQueue *events.Queue) {
 			if !ok {
 				continue
 			}
+			authorName, _ := msg["author_name"].(string)
 			
 			// Simple content filter (expand this later)
 			if len(text) > 500 {
 				continue // Silently drop oversized messages
 			}
 
-			event := events.ChatEvent(c.sessionID, c.userID, text)
+			event := events.ChatEvent(c.sessionID, c.userID, text, authorName)
 			eventQueue.Enqueue(event)
 		}
 	}

@@ -1,4 +1,4 @@
-import EventCard from './EventCard';
+import EventFeed from './EventFeed';
 import { auth } from '@clerk/nextjs/server';
 
 async function fetchEvents(userId: string | null) {
@@ -30,20 +30,15 @@ export default async function Home() {
         <p className="text-lg text-slate-400 max-w-2xl">Join the conversation. Tap into any real Ticketmaster event below to connect with fans around the world.</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {events.length === 0 ? (
-          <div className="col-span-full py-20 flex flex-col items-center justify-center border border-white/5 rounded-3xl bg-white/5 relative overflow-hidden">
-             {/* Neon pulse effect */}
-             <div className="absolute w-[200px] h-[200px] bg-fuchsia-500/20 blur-[60px] rounded-full pointer-events-none"></div>
-             <p className="text-slate-400 font-medium tracking-wide z-10 text-lg">Waiting for Ticketmaster API ingestion...</p>
-             <p className="text-slate-500 text-sm mt-2 z-10">Trigger <code className="bg-black/50 px-2 py-0.5 rounded ml-1">POST /api/admin/trigger-fetch</code> to populate.</p>
-          </div>
-        ) : (
-          events.map((e: any) => (
-            <EventCard key={e.id} event={e} />
-          ))
-        )}
-      </div>
+      {events.length === 0 ? (
+        <div className="col-span-full py-20 flex flex-col items-center justify-center border border-white/5 rounded-3xl bg-white/5 relative overflow-hidden">
+           <div className="absolute w-[200px] h-[200px] bg-fuchsia-500/20 blur-[60px] rounded-full pointer-events-none"></div>
+           <p className="text-slate-400 font-medium tracking-wide z-10 text-lg">Waiting for Ticketmaster API ingestion...</p>
+           <p className="text-slate-500 text-sm mt-2 z-10">Trigger <code className="bg-black/50 px-2 py-0.5 rounded ml-1">POST /api/admin/trigger-fetch</code> to populate.</p>
+        </div>
+      ) : (
+        <EventFeed initialEvents={events} />
+      )}
     </div>
   );
 }

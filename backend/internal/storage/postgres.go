@@ -25,6 +25,7 @@ type Event struct {
 	Type          string    `json:"type"`            // e.g., "concert", "sports"
 	Title         string    `json:"title"`           // User friendly name
 	Location      string    `json:"location"`
+	Country       string    `json:"country"`
 	StartTime     time.Time `json:"start_time"`
 	EndTime       time.Time `json:"end_time"`
 	ExternalAPIID string    `json:"external_api_id"` // ID from Ticketmaster/SeatGeek
@@ -89,6 +90,7 @@ func (db *PostgresClient) InitSchema(ctx context.Context) error {
 	);
 
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS location VARCHAR(255);
+	ALTER TABLE events ADD COLUMN IF NOT EXISTS country VARCHAR(10);
 	`
 	_, err := db.pool.Exec(ctx, queries)
 	return err
@@ -97,15 +99,16 @@ func (db *PostgresClient) InitSchema(ctx context.Context) error {
 // InsertEvent cleanly inserts or updates an event in Postgres
 func (db *PostgresClient) InsertEvent(ctx context.Context, e Event) error {
 	query := `
-		INSERT INTO events (id, type, title, location, start_time, end_time, external_api_id, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+		INSERT INTO events (id, type, title, location, country, start_time, end_time, external_api_id, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 		ON CONFLICT (id) DO UPDATE SET
 			title = EXCLUDED.title,
 			location = EXCLUDED.location,
+			country = EXCLUDED.country,
 			start_time = EXCLUDED.start_time,
 			end_time = EXCLUDED.end_time;
 	`
-	_, err := db.pool.Exec(ctx, query, e.ID, e.Type, e.Title, e.Location, e.StartTime, e.EndTime, e.ExternalAPIID, e.CreatedAt)
+	_, err := db.pool.Exec(ctx, query, e.ID, e.Type, e.Title, e.Location, e.Country, e.StartTime, e.EndTime, e.ExternalAPIID, e.CreatedAt)
 	return err
 }
 
@@ -119,7 +122,7 @@ func (db *PostgresClient) Close() {
 // GetUpcomingEvents fetches events ordered by date
 func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int) ([]Event, error) {
 	query := `
-		SELECT id, type, title, location, start_time, end_time, external_api_id, created_at
+		SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
 		FROM events
 		WHERE end_time > NOW()
 		ORDER BY start_time ASC
@@ -135,10 +138,12 @@ func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int) ([]E
 	for rows.Next() {
 		var e Event
 		var loc *string
-		if err := rows.Scan(&e.ID, &e.Type, &e.Title, &loc, &e.StartTime, &e.EndTime, &e.ExternalAPIID, &e.CreatedAt); err != nil {
+		var country *string
+		if err := rows.Scan(&e.ID, &e.Type, &e.Title, &loc, &country, &e.StartTime, &e.EndTime, &e.ExternalAPIID, &e.CreatedAt); err != nil {
 			return nil, err
 		}
 		if loc != nil { e.Location = *loc }
+		if country != nil { e.Country = *country }
 		events = append(events, e)
 	}
 	return events, nil

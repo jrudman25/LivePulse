@@ -16,11 +16,12 @@ type RedisClient struct {
 
 // ChatMessage represents a single message in the live chat
 type ChatMessage struct {
-	ID        string    `json:"id"`
-	UserID    string    `json:"user_id"`
-	SessionID string    `json:"session_id"` // Matches Event ID
-	Text      string    `json:"text"`
-	Timestamp time.Time `json:"timestamp"`
+	ID         string    `json:"id"`
+	UserID     string    `json:"user_id"`
+	SessionID  string    `json:"session_id"` // Matches Event ID
+	Text       string    `json:"text"`
+	AuthorName string    `json:"author_name"`
+	Timestamp  time.Time `json:"timestamp"`
 }
 
 // NewRedisClient establishes a connection to Upstash/Redis
