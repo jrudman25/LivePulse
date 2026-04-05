@@ -6,6 +6,7 @@ export type ChatMessage = {
   user_id: string;
   session_id: string;
   text: string;
+  author_name: string;
   timestamp: string;
 };
 
@@ -74,9 +75,9 @@ export function useWebSocket(sessionId: string) {
     };
   }, [sessionId, getToken]);
 
-  const sendMessage = useCallback((text: string) => {
+  const sendMessage = useCallback((text: string, authorName: string) => {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: "chat", text }));
+      wsRef.current.send(JSON.stringify({ type: "chat", text, author_name: authorName }));
     }
   }, []);
 

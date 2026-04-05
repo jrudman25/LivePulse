@@ -110,16 +110,17 @@ func main() {
 				})
 			}
 		} else if event.Type == events.EventTypeChat {
-			if text, ok := event.GetChatText(); ok {
+			if text, authorName, ok := event.GetChatText(); ok {
 				// Censor profanity using go-away
 				cleanText := goaway.Censor(text)
 
 				chatMsg := &storage.ChatMessage{
-					ID:        event.ID,
-					UserID:    event.UserID,
-					SessionID: event.SessionID,
-					Text:      cleanText,
-					Timestamp: event.Timestamp,
+					ID:         event.ID,
+					UserID:     event.UserID,
+					SessionID:  event.SessionID,
+					Text:       cleanText,
+					AuthorName: authorName,
+					Timestamp:  event.Timestamp,
 				}
 				
 				// Save to Redis

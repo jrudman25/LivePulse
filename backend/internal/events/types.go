@@ -79,19 +79,22 @@ func (e *Event) GetReactionType() (ReactionType, bool) {
 }
 
 // ChatEvent creates a chat event
-func ChatEvent(sessionID, userID string, text string) *Event {
+func ChatEvent(sessionID, userID string, text string, authorName string) *Event {
 	return NewEvent(EventTypeChat, sessionID, userID, map[string]interface{}{
 		"text": text,
+		"author_name": authorName,
 	})
 }
 
 // GetChatText extracts the text from a chat event
-func (e *Event) GetChatText() (string, bool) {
+func (e *Event) GetChatText() (string, string, bool) {
 	if e.Type != EventTypeChat {
-		return "", false
+		return "", "", false
 	}
-	if text, ok := e.Payload["text"].(string); ok {
-		return text, true
+	text, txtOk := e.Payload["text"].(string)
+	author, _ := e.Payload["author_name"].(string)
+	if txtOk {
+		return text, author, true
 	}
-	return "", false
+	return "", "", false
 }

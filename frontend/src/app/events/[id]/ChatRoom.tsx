@@ -19,8 +19,11 @@ export default function ChatRoom({ sessionId }: { sessionId: string }) {
     e.preventDefault();
     if (!inputBox.trim()) return;
     
+    // Fallback hierarchy for OAuth users without usernames
+    let authorName = user?.username || user?.firstName || "Anonymous Guest";
+
     // Relay to the Go backend via WebSocket!
-    sendMessage(inputBox);
+    sendMessage(inputBox, authorName);
     
     setInputBox("");
   }
@@ -44,7 +47,7 @@ export default function ChatRoom({ sessionId }: { sessionId: string }) {
            return (
              <div key={i} className={`flex flex-col ${isMe ? 'items-end' : 'items-start'}`}>
                <span className="text-[10px] uppercase tracking-wider text-slate-500 mb-1 px-2">
-                 User {msg.user_id.slice(-5)}
+                 {msg.author_name || `User ${msg.user_id.slice(-5)}`}
                </span>
                <div 
                  className={`px-4 py-2.5 text-sm/relaxed max-w-[85%] md:max-w-[70%] shadow-lg ${

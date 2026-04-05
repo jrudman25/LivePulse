@@ -7,8 +7,6 @@ import (
 	"log"
 	"net/http"
 	"time"
-
-	"github.com/google/uuid"
 	"github.com/jrudman25/livepulse/internal/storage"
 	"github.com/robfig/cron/v3"
 )
@@ -76,6 +74,9 @@ type TMEvent struct {
 			State struct {
 				StateCode string `json:"stateCode"`
 			} `json:"state"`
+			Country struct {
+				CountryCode string `json:"countryCode"`
+			} `json:"country"`
 		} `json:"venues"`
 	} `json:"_embedded"`
 }
@@ -122,6 +123,7 @@ func (f *APIFetcher) FetchAPIEvents() {
 		}
 
 		locationStr := "TBA"
+		countryStr := "US"
 		if len(tmEvent.Embedded.Venues) > 0 {
 			venue := tmEvent.Embedded.Venues[0]
 			if venue.Name != "" {
@@ -130,13 +132,17 @@ func (f *APIFetcher) FetchAPIEvents() {
 					locationStr = fmt.Sprintf("%s (%s, %s)", venue.Name, venue.City.Name, venue.State.StateCode)
 				}
 			}
+			if venue.Country.CountryCode != "" {
+				countryStr = venue.Country.CountryCode
+			}
 		}
 
 		e := storage.Event{
-			ID:            uuid.New().String(),
+			ID:            tmEvent.ID,
 			Type:          eventType,
 			Title:         tmEvent.Name,
 			Location:      locationStr,
+			Country:       countryStr,
 			StartTime:     startTime,
 			EndTime:       startTime.Add(3 * time.Hour), // TM strict end-times are often missing, 3 hours is a safe heuristic
 			ExternalAPIID: tmEvent.ID,
