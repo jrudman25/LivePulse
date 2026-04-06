@@ -130,6 +130,7 @@ func (c *Client) readPump(eventQueue *events.Queue) {
 		var msg map[string]interface{}
 		if err := json.Unmarshal(message, &msg); err != nil {
 			log.Printf("Error parsing message: %v", err)
+			c.send <- []byte(`{"type":"error","message":"Invalid JSON payload structure"}`)
 			continue
 		}
 
@@ -156,7 +157,9 @@ func (c *Client) readPump(eventQueue *events.Queue) {
 			
 			// Simple content filter (expand this later)
 			if len(text) > 500 {
-				continue // Silently drop oversized messages
+				log.Printf("Chat message artificially blocked natively due to string boundaries.")
+				c.send <- []byte(`{"type":"error","message":"Message payload exceeded 500 character limit"}`)
+				continue
 			}
 
 			event := events.ChatEvent(c.sessionID, c.userID, text, authorName)

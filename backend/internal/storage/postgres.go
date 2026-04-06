@@ -121,7 +121,7 @@ func (db *PostgresClient) Close() {
 }
 
 // GetUpcomingEvents fetches events ordered by date
-func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, searchQuery string) ([]Event, error) {
+func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, offset int, searchQuery string) ([]Event, error) {
 	var rows pgx.Rows
 	var err error
 
@@ -131,18 +131,18 @@ func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, sear
 			FROM events
 			WHERE end_time > NOW() AND title ILIKE '%' || $1 || '%'
 			ORDER BY start_time ASC
-			LIMIT $2
+			LIMIT $2 OFFSET $3
 		`
-		rows, err = db.pool.Query(ctx, query, searchQuery, limit)
+		rows, err = db.pool.Query(ctx, query, searchQuery, limit, offset)
 	} else {
 		query := `
 			SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
 			FROM events
 			WHERE end_time > NOW()
 			ORDER BY start_time ASC
-			LIMIT $1
+			LIMIT $1 OFFSET $2
 		`
-		rows, err = db.pool.Query(ctx, query, limit)
+		rows, err = db.pool.Query(ctx, query, limit, offset)
 	}
 
 	if err != nil {

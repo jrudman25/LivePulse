@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jrudman25/livepulse/internal/aggregation"
@@ -187,8 +188,14 @@ func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
 
 	userID := r.URL.Query().Get("user_id")
 	q := r.URL.Query().Get("q")
+	offsetStr := r.URL.Query().Get("offset")
 	
-	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 50, q)
+	offset := 0
+	if val, err := strconv.Atoi(offsetStr); err == nil {
+		offset = val
+	}
+	
+	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 50, offset, q)
 	if err != nil {
 		http.Error(w, "Failed to retrieve events", http.StatusInternalServerError)
 		return

@@ -5,10 +5,14 @@ import { useState, useRef, useEffect } from "react";
 import { useUser } from "@clerk/nextjs";
 
 export default function ChatRoom({ sessionId }: { sessionId: string }) {
-  const { messages, isConnected, sendMessage } = useWebSocket(sessionId);
   const { user } = useUser();
   const [inputBox, setInputBox] = useState("");
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
+  const { messages, isConnected, sendMessage, errorMsg, clearError } = useWebSocket(sessionId);
+
+  const maxChars = 500;
+  const charsRemaining = maxChars - inputBox.length;
+  const isOverLimit = charsRemaining < 0;
 
   // Auto-scroll to bottom of chat feed upon new messages
   useEffect(() => {
@@ -17,7 +21,7 @@ export default function ChatRoom({ sessionId }: { sessionId: string }) {
 
   const handleSend = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!inputBox.trim()) return;
+    if (!inputBox.trim() || isOverLimit) return;
 
     // Fallback hierarchy for OAuth users without usernames
     const authorName = user?.username || user?.firstName || "Anonymous Guest";
@@ -65,24 +69,40 @@ export default function ChatRoom({ sessionId }: { sessionId: string }) {
       </div>
 
       {/* Text Input Footer */}
-      <div className="p-4 bg-white/5 border-t border-white/10">
+      <div className="p-4 bg-white/5 border-t border-white/10 flex flex-col gap-2">
+        
+        {/* Toast Error Banner */}
+        {errorMsg && (
+          <div className="px-4 py-2.5 rounded-xl bg-red-500/10 border border-red-500/30 text-red-300 text-xs font-semibold flex justify-between items-center transition-all animate-in slide-in-from-bottom-2 fade-in shadow-[0_0_15px_rgba(239,68,68,0.15)]">
+            <span>{errorMsg}</span>
+            <button onClick={clearError} className="opacity-60 hover:opacity-100 transition-opacity">&times;</button>
+          </div>
+        )}
+
         <form onSubmit={handleSend} className="flex gap-3">
           <input
             type="text"
             value={inputBox}
             onChange={(e) => setInputBox(e.target.value)}
             disabled={!isConnected}
-            placeholder={isConnected ? "Join the conversation..." : "Waiting for connection..."}
-            className="flex-1 bg-black/60 border border-white/20 rounded-full px-6 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-fuchsia-500 focus:border-transparent transition-all disabled:opacity-50"
+            placeholder={isConnected ? "Type a message..." : "Waiting for connection..."}
+            className={`flex-1 bg-black/60 border ${isOverLimit ? 'border-red-500/50 focus:ring-red-500' : 'border-white/20 focus:ring-fuchsia-500'} rounded-full px-6 py-3 text-white placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:border-transparent transition-all disabled:opacity-50`}
           />
           <button
             type="submit"
-            disabled={!inputBox.trim() || !isConnected}
+            disabled={!inputBox.trim() || !isConnected || isOverLimit}
             className="bg-gradient-to-r from-fuchsia-600 to-blue-600 hover:from-fuchsia-500 hover:to-blue-500 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:cursor-not-allowed text-white rounded-full px-8 py-3 font-semibold transition-all shadow-[0_0_20px_rgba(217,70,239,0.3)] disabled:shadow-none"
           >
             Send
           </button>
         </form>
+        
+        {/* Proactive Character Limit UX */}
+        <div className="flex justify-end px-3">
+           <span className={`text-[10px] font-bold tracking-wider ${isOverLimit ? 'text-red-400 animate-pulse' : (charsRemaining < 50 ? 'text-amber-400' : 'text-slate-500')}`}>
+             {inputBox.length} / 500
+           </span>
+        </div>
       </div>
     </div>
   );
