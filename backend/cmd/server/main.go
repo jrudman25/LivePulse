@@ -161,6 +161,7 @@ func main() {
 
 	// API integration routes
 	mux.HandleFunc("/api/events", api.Chain(apiServer.HandleGetLiveEvents, api.LoggingMiddleware, api.CORSMiddleware))
+	mux.HandleFunc("/api/events/single", api.Chain(apiServer.HandleGetEvent, api.LoggingMiddleware, api.CORSMiddleware))
 	mux.HandleFunc("/api/favorites", api.Chain(apiServer.HandleToggleFavorite, api.LoggingMiddleware, api.CORSMiddleware, api.ClerkMiddleware))
 	
 	// Admin trigger for Ticketmaster

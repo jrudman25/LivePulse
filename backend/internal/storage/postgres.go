@@ -165,6 +165,21 @@ func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, offs
 	return events, nil
 }
 
+// GetEvent fetches a singular event natively securely
+func (db *PostgresClient) GetEvent(ctx context.Context, id string) (*Event, error) {
+	var e Event
+	var loc *string
+	var country *string
+	query := `SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at FROM events WHERE id = $1`
+	err := db.pool.QueryRow(ctx, query, id).Scan(&e.ID, &e.Type, &e.Title, &loc, &country, &e.StartTime, &e.EndTime, &e.ExternalAPIID, &e.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if loc != nil { e.Location = *loc }
+	if country != nil { e.Country = *country }
+	return &e, nil
+}
+
 // AddFavorite links a user to an event bookmark
 func (db *PostgresClient) AddFavorite(ctx context.Context, userID, eventID string) error {
 	query := `

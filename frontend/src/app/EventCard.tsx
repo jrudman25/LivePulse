@@ -16,8 +16,8 @@ export default function EventCard({ event, onFavoriteToggle }: { event: any, onF
     fetch(`http://localhost:8080/api/sessions/stats?session_id=${event.id}`)
       .then(r => r.json())
       .then(data => {
-        if (data && data.active_connections !== undefined) {
-          setActiveUsers(data.active_connections);
+        if (data && data.active_user_count !== undefined) {
+          setActiveUsers(data.active_user_count);
         }
       })
       .catch(() => { });

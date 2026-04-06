@@ -36,7 +36,7 @@ export default async function Home(props: { searchParams: Promise<{ [key: string
         <p className="text-lg text-slate-400 max-w-2xl">Join the conversation. Tap into any real Ticketmaster event below to connect with fans around the world.</p>
       </div>
 
-      {events.length === 0 ? (
+      {events.length === 0 && q === "" ? (
         <div className="col-span-full py-20 flex flex-col items-center justify-center border border-white/5 rounded-3xl bg-white/5 relative overflow-hidden">
            <div className="absolute w-[200px] h-[200px] bg-fuchsia-500/20 blur-[60px] rounded-full pointer-events-none"></div>
            <p className="text-slate-400 font-medium tracking-wide z-10 text-lg">Waiting for Ticketmaster API ingestion...</p>

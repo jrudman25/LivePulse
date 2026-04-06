@@ -24,8 +24,9 @@ Chat messages are fired at a phenomenal rate during live events, representing a 
 
 ### 4. Interactive Client (Next.js Frontend)
 - **Next.js 15 App Router**: The client maps heavily to React Server Components (RSC) when rendering the Event Dashboard, passing control off to Client Components exclusively for the Live Chat Arena.
+- **Pagination & Query Mapping**: The platform supports infinite scrolling using native `OFFSET` database bounds synchronized to explicit URL query strings (`?q=...&offset=...`) allowing for copy-pasteable dashboard states.
 - **Progressive Web App (PWA)**: Designed primarily for users holding their mobile phones at a concert, the frontend generates native `manifest.json` headers to allow consumers to install it seamlessly to their iOS or Android home screens.
-- **Premium Aesthetics**: Built via TailwindCSS, `shadcn/ui`, and Framer Motion to create a highly stylized, dark-mode, glassmorphic layout prioritizing premium UI. React hooks (`useWebSocket`) maintain sub-millisecond sync with the Go array.
+- **Premium Aesthetics & Defenses**: Built via TailwindCSS, `shadcn/ui`, and Framer Motion to create a highly stylized layout prioritizing premium UI. React hooks (`useWebSocket`) maintain sub-millisecond sync with the Go array and actively intercept any Go backend Payload Refusal metrics dynamically transforming them into sleek "Toast" bounds to stop UX breaking.
 
 ### 5. Security Handshake (Clerk)
 - All connections are guarded by **Clerk Auth**. Instead of native standard headers (which native WebSockets do not support), Next.js encrypts the user's active session JSON Web Token (JWT) into the secure `WSS://` connection string. The Go server catches the token, decrypts it manually, and rigidly maps the payload strictly to the proven sender.

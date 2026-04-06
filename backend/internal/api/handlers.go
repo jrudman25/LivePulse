@@ -138,7 +138,7 @@ func (s *Server) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 	stats, exists := s.aggManager.GetSession(sessionID)
 	if !exists {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]int{"active_connections": 0})
+		json.NewEncoder(w).Encode(map[string]int{"active_user_count": 0})
 		return
 	}
 
@@ -217,6 +217,26 @@ func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(eventsData)
+}
+
+// HandleGetEvent surfaces a single event by ID securely
+func (s *Server) HandleGetEvent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id required", http.StatusBadRequest)
+		return
+	}
+	event, err := s.db.GetEvent(r.Context(), id)
+	if err != nil {
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(event)
 }
 
 // FavoriteRequest represents the incoming JSON for favoriting

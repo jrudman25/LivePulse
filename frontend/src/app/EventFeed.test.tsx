@@ -19,8 +19,8 @@ jest.mock('next/navigation', () => ({
 }));
 
 const mockEvents = [
-  { id: '1', type: 'Music', title: 'Coachella', country: 'US', location: 'California' },
-  { id: '2', type: 'Sports', title: 'World Cup', country: 'CA', location: 'Toronto' }
+  { id: '1', type: 'Music', title: 'Coachella', country: 'US', location: 'California', is_favorite: true },
+  { id: '2', type: 'Sports', title: 'World Cup', country: 'CA', location: 'Toronto', is_favorite: false }
 ];
 
 describe('EventFeed Filters & Layouts', () => {
@@ -73,5 +73,19 @@ describe('EventFeed Filters & Layouts', () => {
 
     expect(screen.queryByTestId('event-card')).not.toBeInTheDocument();
     expect(screen.getByText(/No events found/i)).toBeInTheDocument();
+  });
+
+  it('filters out elements dynamically matching the Favorites explicitly', () => {
+    render(<EventFeed initialEvents={mockEvents} />);
+    
+    // Extrapolate Favorites dropdown safely
+    const favDropdown = screen.getByDisplayValue('All Events');
+    
+    // Simulate user toggling directly mapping to `Favorites`
+    fireEvent.change(favDropdown, { target: { value: 'Favorites' } });
+    
+    // Coachella is favorited, World Cup is not.
+    expect(screen.getByText('Coachella')).toBeInTheDocument();
+    expect(screen.queryByText('World Cup')).not.toBeInTheDocument();
   });
 });
