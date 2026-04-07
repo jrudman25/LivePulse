@@ -53,7 +53,8 @@ export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
 
     try {
       const q = searchParamsString ? `&q=${encodeURIComponent(debouncedQuery)}` : "";
-      const res = await fetch(`http://localhost:8080/api/events?offset=${offset}${q}`);
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+      const res = await fetch(`${API_URL}/api/events?offset=${offset}${q}`);
       const data = await res.json();
       
       if (!data || data.length < 50) {

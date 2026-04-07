@@ -8,7 +8,8 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   let eventTitle = "Live Session";
   let isEventFound = true;
   try {
-    const res = await fetch(`http://localhost:8080/api/events/single?id=${id}`, { cache: 'no-store' });
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    const res = await fetch(`${API_URL}/api/events/single?id=${id}`, { cache: 'no-store' });
     if (res.ok) {
         const data = await res.json();
         eventTitle = data.title || "Live Session";
