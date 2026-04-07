@@ -13,7 +13,8 @@ export default function EventCard({ event, onFavoriteToggle }: { event: any, onF
 
   useEffect(() => {
     // Poll the Go WebSocket Hub for active connected users passively
-    fetch(`http://localhost:8080/api/sessions/stats?session_id=${event.id}`)
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    fetch(`${API_URL}/api/sessions/stats?session_id=${event.id}`)
       .then(r => r.json())
       .then(data => {
         if (data && data.active_user_count !== undefined) {
@@ -34,7 +35,8 @@ export default function EventCard({ event, onFavoriteToggle }: { event: any, onF
     try {
       const token = await getToken();
       const method = isFavorite ? "DELETE" : "POST";
-      const res = await fetch("http://localhost:8080/api/favorites", {
+      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+      const res = await fetch(`${API_URL}/api/favorites`, {
         method,
         headers: {
           "Authorization": `Bearer ${token}`,

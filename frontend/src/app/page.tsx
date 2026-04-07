@@ -3,7 +3,8 @@ import { auth } from '@clerk/nextjs/server';
 
 async function fetchEvents(userId: string | null, q: string) {
   try {
-    let url = 'http://localhost:8080/api/events';
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    let url = `${API_URL}/api/events`;
     const params = new URLSearchParams();
     if (userId) params.append("user_id", userId);
     if (q) params.append("q", q);
@@ -22,11 +23,11 @@ async function fetchEvents(userId: string | null, q: string) {
   }
 }
 
-export default async function Home(props: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
-  const searchParams = await props.searchParams;
+export default async function Home({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const resolvedParams = await searchParams;
   const { userId } = await auth();
   
-  const q = typeof searchParams.q === 'string' ? searchParams.q : "";
+  const q = typeof resolvedParams.q === 'string' ? resolvedParams.q : "";
   const events = await fetchEvents(userId, q);
 
   return (

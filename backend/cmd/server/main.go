@@ -100,7 +100,8 @@ func main() {
 		}
 
 		// Broadcast event to WebSocket clients
-		if event.Type == events.EventTypeReaction {
+		switch event.Type {
+		case events.EventTypeReaction:
 			if reactionType, ok := event.GetReactionType(); ok {
 				wsHub.BroadcastToSession(event.SessionID, map[string]interface{}{
 					"type":          "reaction",
@@ -109,7 +110,7 @@ func main() {
 					"timestamp":     event.Timestamp,
 				})
 			}
-		} else if event.Type == events.EventTypeChat {
+		case events.EventTypeChat:
 			if text, authorName, ok := event.GetChatText(); ok {
 				// Censor profanity using go-away
 				cleanText := goaway.Censor(text)

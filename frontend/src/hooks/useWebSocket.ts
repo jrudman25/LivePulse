@@ -33,8 +33,9 @@ export function useWebSocket(sessionId: string) {
         const token = await getToken();
         if (!token) return;
 
-        // Ensure this points to the external Go server address (localhost:8080 during dev)
-        const url = `ws://localhost:8080/ws?session_id=${sessionId}&token=${token}`;
+        // Ensure this points to the external Go server address dynamically
+        const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080";
+        const url = `${WS_URL}/ws?session_id=${sessionId}&token=${token}`;
         const ws = new WebSocket(url);
 
         ws.onopen = () => {
