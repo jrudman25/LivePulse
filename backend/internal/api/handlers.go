@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/jrudman25/livepulse/internal/aggregation"
@@ -137,7 +138,7 @@ func (s *Server) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 	stats, exists := s.aggManager.GetSession(sessionID)
 	if !exists {
 		w.Header().Set("Content-Type", "application/json")
-		json.NewEncoder(w).Encode(map[string]int{"active_connections": 0})
+		json.NewEncoder(w).Encode(map[string]int{"active_user_count": 0})
 		return
 	}
 
@@ -185,14 +186,22 @@ func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 50)
+	userID := r.URL.Query().Get("user_id")
+	q := r.URL.Query().Get("q")
+	offsetStr := r.URL.Query().Get("offset")
+	
+	offset := 0
+	if val, err := strconv.Atoi(offsetStr); err == nil {
+		offset = val
+	}
+	
+	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 50, offset, q)
 	if err != nil {
 		http.Error(w, "Failed to retrieve events", http.StatusInternalServerError)
 		return
 	}
 
 	// Dynamically inject favorite states if a user_id is provided
-	userID := r.URL.Query().Get("user_id")
 	if userID != "" {
 		favIDs, _ := s.db.GetUserFavorites(r.Context(), userID)
 		favMap := make(map[string]bool)
@@ -208,6 +217,26 @@ func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(eventsData)
+}
+
+// HandleGetEvent surfaces a single event by ID securely
+func (s *Server) HandleGetEvent(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	id := r.URL.Query().Get("id")
+	if id == "" {
+		http.Error(w, "id required", http.StatusBadRequest)
+		return
+	}
+	event, err := s.db.GetEvent(r.Context(), id)
+	if err != nil {
+		http.Error(w, "Event not found", http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(event)
 }
 
 // FavoriteRequest represents the incoming JSON for favoriting

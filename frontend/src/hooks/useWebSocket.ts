@@ -13,13 +13,15 @@ export type ChatMessage = {
 export type WSEvent = 
   | { type: "chat"; message: ChatMessage }
   | { type: "reaction"; user_id: string; reaction_type: string; timestamp: string }
-  | { type: "milestone_achieved"; milestone: any; achieved_at: string };
+  | { type: "milestone_achieved"; milestone: any; achieved_at: string }
+  | { type: "error"; message: string };
 
 export function useWebSocket(sessionId: string) {
   const { getToken } = useAuth();
   const wsRef = useRef<WebSocket | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   useEffect(() => {
     if (!sessionId) return;
@@ -48,11 +50,14 @@ export function useWebSocket(sessionId: string) {
           try {
             const data: WSEvent = JSON.parse(event.data);
             if (data.type === "chat") {
-              // Append newly broadcasted messages, preventing React Strict Mode duplicates
               setMessages((prev) => {
                 if (prev.some(m => m.id === data.message.id)) return prev;
                 return [...prev, data.message];
               });
+            } else if (data.type === "error") {
+              // Immediately flag the React toast interface natively
+              setErrorMsg(data.message);
+              setTimeout(() => setErrorMsg(null), 5000); // clear gracefully
             }
           } catch (e) {
             console.error("Failed to parse WS message", e);
@@ -87,5 +92,7 @@ export function useWebSocket(sessionId: string) {
     }
   }, []);
 
-  return { messages, isConnected, sendMessage, sendReaction, setMessages };
+  const clearError = useCallback(() => setErrorMsg(null), []);
+
+  return { messages, isConnected, sendMessage, sendReaction, setMessages, errorMsg, clearError };
 }

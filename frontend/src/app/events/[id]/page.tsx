@@ -1,9 +1,29 @@
 import ChatRoom from "./ChatRoom";
 import Link from "next/link";
+import { notFound } from "next/navigation";
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   
+  let eventTitle = "Live Session";
+  let isEventFound = true;
+  try {
+    const res = await fetch(`http://localhost:8080/api/events/single?id=${id}`, { cache: 'no-store' });
+    if (res.ok) {
+        const data = await res.json();
+        eventTitle = data.title || "Live Session";
+    } else if (res.status === 404) {
+        isEventFound = false;
+    }
+  } catch (e) {
+    console.error("Failed to fetch native event details", e);
+  }
+
+  // Native Next.js 404 routing MUST occur outside exception hierarchies to securely trigger!
+  if (!isEventFound) {
+      notFound();
+  }
+
   return (
     <div className="container mx-auto p-4 md:p-8 h-[calc(100vh-80px)] flex flex-col">
       <div className="mb-6 flex items-start justify-between">
@@ -11,7 +31,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           <Link href="/" className="text-fuchsia-400 hover:text-fuchsia-300 text-sm font-semibold flex items-center transition-colors w-fit group">
             <span className="mr-1 group-hover:-translate-x-1 transition-transform">&larr;</span> Back to Events
           </Link>
-          <h1 className="text-3xl md:text-4xl font-bold text-white mt-1">Live Session</h1>
+          <h1 className="text-3xl md:text-4xl font-bold text-white mt-1 line-clamp-2">{eventTitle}</h1>
           <p className="text-slate-400 text-xs font-medium tracking-wide border border-white/10 bg-white/5 rounded-full px-3 py-1 w-fit mt-1">Session ID: {id}</p>
         </div>
         <div className="flex items-center gap-2 bg-green-500/10 px-3 py-1.5 rounded-full border border-green-500/20 shadow-[0_0_15px_rgba(34,197,94,0.1)] mt-8">

@@ -1,13 +1,16 @@
 import EventFeed from './EventFeed';
 import { auth } from '@clerk/nextjs/server';
 
-async function fetchEvents(userId: string | null) {
+async function fetchEvents(userId: string | null, q: string) {
   try {
-    const url = userId 
-      ? `http://localhost:8080/api/events?user_id=${userId}`
-      : 'http://localhost:8080/api/events';
+    let url = 'http://localhost:8080/api/events';
+    const params = new URLSearchParams();
+    if (userId) params.append("user_id", userId);
+    if (q) params.append("q", q);
+    
+    const qs = params.toString();
+    if (qs) url += `?${qs}`;
 
-    // Calling the Go Backend natively from a Next.js 15 Server Component!
     const res = await fetch(url, { cache: 'no-store' });
     if (!res.ok) return [];
     
@@ -19,9 +22,12 @@ async function fetchEvents(userId: string | null) {
   }
 }
 
-export default async function Home() {
+export default async function Home(props: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
+  const searchParams = await props.searchParams;
   const { userId } = await auth();
-  const events = await fetchEvents(userId);
+  
+  const q = typeof searchParams.q === 'string' ? searchParams.q : "";
+  const events = await fetchEvents(userId, q);
 
   return (
     <div className="container mx-auto p-4 md:p-8 mt-10">
@@ -30,7 +36,7 @@ export default async function Home() {
         <p className="text-lg text-slate-400 max-w-2xl">Join the conversation. Tap into any real Ticketmaster event below to connect with fans around the world.</p>
       </div>
 
-      {events.length === 0 ? (
+      {events.length === 0 && q === "" ? (
         <div className="col-span-full py-20 flex flex-col items-center justify-center border border-white/5 rounded-3xl bg-white/5 relative overflow-hidden">
            <div className="absolute w-[200px] h-[200px] bg-fuchsia-500/20 blur-[60px] rounded-full pointer-events-none"></div>
            <p className="text-slate-400 font-medium tracking-wide z-10 text-lg">Waiting for Ticketmaster API ingestion...</p>

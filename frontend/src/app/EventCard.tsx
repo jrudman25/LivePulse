@@ -4,7 +4,8 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { useAuth } from "@clerk/nextjs";
 
-export default function EventCard({ event }: { event: any }) {
+// Add optional callback updating parent DOM states cleanly
+export default function EventCard({ event, onFavoriteToggle }: { event: any, onFavoriteToggle?: (id: string, isFav: boolean) => void }) {
   const [isFavorite, setIsFavorite] = useState(event.is_favorite || false);
   const { getToken, isSignedIn } = useAuth();
   const [isLiking, setIsLiking] = useState(false);
@@ -15,8 +16,8 @@ export default function EventCard({ event }: { event: any }) {
     fetch(`http://localhost:8080/api/sessions/stats?session_id=${event.id}`)
       .then(r => r.json())
       .then(data => {
-        if (data && data.active_connections !== undefined) {
-          setActiveUsers(data.active_connections);
+        if (data && data.active_user_count !== undefined) {
+          setActiveUsers(data.active_user_count);
         }
       })
       .catch(() => { });
@@ -42,7 +43,12 @@ export default function EventCard({ event }: { event: any }) {
         body: JSON.stringify({ event_id: event.id })
       });
 
-      if (res.ok) setIsFavorite(!isFavorite);
+      if (res.ok) {
+        setIsFavorite(!isFavorite);
+        if (onFavoriteToggle) {
+          onFavoriteToggle(event.id, !isFavorite);
+        }
+      }
     } catch (err) {
       console.error(err);
     } finally {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
@@ -120,15 +121,30 @@ func (db *PostgresClient) Close() {
 }
 
 // GetUpcomingEvents fetches events ordered by date
-func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int) ([]Event, error) {
-	query := `
-		SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
-		FROM events
-		WHERE end_time > NOW()
-		ORDER BY start_time ASC
-		LIMIT $1
-	`
-	rows, err := db.pool.Query(ctx, query, limit)
+func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, offset int, searchQuery string) ([]Event, error) {
+	var rows pgx.Rows
+	var err error
+
+	if searchQuery != "" {
+		query := `
+			SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
+			FROM events
+			WHERE end_time > NOW() AND title ILIKE '%' || $1 || '%'
+			ORDER BY start_time ASC
+			LIMIT $2 OFFSET $3
+		`
+		rows, err = db.pool.Query(ctx, query, searchQuery, limit, offset)
+	} else {
+		query := `
+			SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
+			FROM events
+			WHERE end_time > NOW()
+			ORDER BY start_time ASC
+			LIMIT $1 OFFSET $2
+		`
+		rows, err = db.pool.Query(ctx, query, limit, offset)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -147,6 +163,21 @@ func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int) ([]E
 		events = append(events, e)
 	}
 	return events, nil
+}
+
+// GetEvent fetches a singular event natively securely
+func (db *PostgresClient) GetEvent(ctx context.Context, id string) (*Event, error) {
+	var e Event
+	var loc *string
+	var country *string
+	query := `SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at FROM events WHERE id = $1`
+	err := db.pool.QueryRow(ctx, query, id).Scan(&e.ID, &e.Type, &e.Title, &loc, &country, &e.StartTime, &e.EndTime, &e.ExternalAPIID, &e.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	if loc != nil { e.Location = *loc }
+	if country != nil { e.Country = *country }
+	return &e, nil
 }
 
 // AddFavorite links a user to an event bookmark
