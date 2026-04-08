@@ -1,51 +1,29 @@
-import EventFeed from './EventFeed';
-import { auth } from '@clerk/nextjs/server';
+import Link from 'next/link';
 
-async function fetchEvents(userId: string | null, q: string) {
-  try {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-    let url = `${API_URL}/api/events`;
-    const params = new URLSearchParams();
-    if (userId) params.append("user_id", userId);
-    if (q) params.append("q", q);
-    
-    const qs = params.toString();
-    if (qs) url += `?${qs}`;
-
-    const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return [];
-    
-    const data = await res.json();
-    return data || [];
-  } catch (err) {
-    console.error("Failed to fetch events from Go backend:", err);
-    return [];
-  }
-}
-
-export default async function Home({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
-  const resolvedParams = await searchParams;
-  const { userId } = await auth();
-  
-  const q = typeof resolvedParams.q === 'string' ? resolvedParams.q : "";
-  const events = await fetchEvents(userId, q);
-
+export default function LandingPage() {
   return (
-    <div className="container mx-auto p-4 md:p-8 mt-10">
-      <div className="mb-12 text-center md:text-left">
-        <h1 className="text-4xl md:text-6xl font-bold tracking-tighter mb-4 text-transparent bg-clip-text bg-gradient-to-br from-white to-white/50">Live Events</h1>
-        <p className="text-lg text-slate-400 max-w-2xl">Join the conversation. Tap into any real Ticketmaster event below to connect with fans around the world.</p>
-      </div>
+    <div className="relative flex flex-col items-center justify-center min-h-[85vh] text-center px-4 overflow-hidden">
+      {/* Dynamic Gradients */}
+      <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[80vw] h-[80vw] md:w-[600px] md:h-[600px] bg-gradient-to-tr from-fuchsia-600/20 to-blue-600/20 blur-[100px] rounded-full pointer-events-none"></div>
 
-      {events.length === 0 && q === "" ? (
-        <div className="col-span-full py-20 flex flex-col items-center justify-center border border-white/5 rounded-3xl bg-white/5 relative overflow-hidden">
-           <div className="absolute w-[200px] h-[200px] bg-fuchsia-500/20 blur-[60px] rounded-full pointer-events-none"></div>
-           <p className="text-slate-400 font-medium tracking-wide z-10 text-lg">Waiting for Ticketmaster API ingestion...</p>
-           <p className="text-slate-500 text-sm mt-2 z-10">Trigger <code className="bg-black/50 px-2 py-0.5 rounded ml-1">POST /api/admin/trigger-fetch</code> to populate.</p>
+      <div className="z-10 max-w-4xl space-y-8">
+
+        <h1 className="text-5xl md:text-8xl font-black tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-white/60 drop-shadow-sm leading-tight">
+          The heartbeat of <br className="hidden md:block" /> every live event.
+        </h1>
+
+        <p className="text-lg md:text-2xl text-slate-400 max-w-2xl mx-auto font-light leading-relaxed">
+          Sync up with thousands of fans at the exact same venue in real-time. Drop into live arenas powered by Ticketmaster.
+        </p>
+
+        <div className="pt-8">
+          <Link href="/events" className="group relative inline-flex items-center justify-center px-8 py-4 font-bold text-white transition-all bg-fuchsia-600 rounded-full hover:bg-fuchsia-500 hover:scale-105 hover:shadow-[0_0_40px_rgba(217,70,239,0.4)] active:scale-95">
+            <span className="absolute inset-0 w-full h-full rounded-full border border-white/20"></span>
+            Explore Live Arenas
+            <svg className="w-5 h-5 ml-2 transition-transform group-hover:translate-x-1" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 5l7 7-7 7M5 12h14" /></svg>
+          </Link>
         </div>
-      ) : (
-        <EventFeed initialEvents={events} />
-      )}
+      </div>
     </div>
   );
 }

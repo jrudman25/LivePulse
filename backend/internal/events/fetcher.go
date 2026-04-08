@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"strings"
 	"time"
 	"github.com/jrudman25/livepulse/internal/storage"
 	"github.com/robfig/cron/v3"
@@ -91,7 +92,9 @@ func (f *APIFetcher) FetchAPIEvents() {
 	log.Println("Fetching new events from Ticketmaster API...")
 
 	nowStr := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	url := fmt.Sprintf("https://app.ticketmaster.com/discovery/v2/events.json?apikey=%s&size=30&sort=date,asc&startDateTime=%s", f.apiKey, nowStr)
+	// Lock fetches perfectly onto verified high-quality event categories
+	classificationParams := "classificationName=Music,Sports,Arts & Theatre,Comedy,Film"
+	url := fmt.Sprintf("https://app.ticketmaster.com/discovery/v2/events.json?apikey=%s&size=50&sort=date,asc&startDateTime=%s&%s", f.apiKey, nowStr, classificationParams)
 	resp, err := http.Get(url)
 	if err != nil {
 		log.Printf("Error requesting TM API: %v", err)
@@ -113,13 +116,20 @@ func (f *APIFetcher) FetchAPIEvents() {
 	for _, tmEvent := range tmResp.Embedded.Events {
 		startTime, err := time.Parse(time.RFC3339, tmEvent.Dates.Start.DateTime)
 		if err != nil {
-			// Fallback to exactly tomorrow if TM date is missing or malformed
-			startTime = time.Now().Add(24 * time.Hour) 
+			// Skip generic events that lack a rigid start date entirely
+			log.Printf("Skipping event with invalid date: %s", tmEvent.Name)
+			continue
 		}
 
 		eventType := "Event"
 		if len(tmEvent.Classifications) > 0 {
 			eventType = tmEvent.Classifications[0].Segment.Name
+		}
+		
+		// Aggressive fallback safety filter rejecting generic "Miscellaneous"
+		importType := eventType
+		if importType == "Miscellaneous" || importType == "Undefined" {
+			continue
 		}
 
 		locationStr := "TBA"
@@ -135,6 +145,21 @@ func (f *APIFetcher) FetchAPIEvents() {
 			if venue.Country.CountryCode != "" {
 				countryStr = venue.Country.CountryCode
 			}
+		}
+
+		// Database logic will purge legacy data. Future fetched data is shielded organically above by classification limits.
+		// However, TM sometimes categorizes VIP add-ons or Parking precisely under "Music", bypassing the classification wall.
+		titleLower := strings.ToLower(tmEvent.Name)
+		isJunk := false
+		for _, keyword := range []string{"parking", "permit", "vip club", "shuttle", "camping", "add-on"} {
+			if strings.Contains(titleLower, keyword) {
+				isJunk = true
+				break
+			}
+		}
+		if isJunk {
+			log.Printf("Skipping metadata junk pass: %s", tmEvent.Name)
+			continue
 		}
 
 		e := storage.Event{
