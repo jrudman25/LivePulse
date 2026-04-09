@@ -146,7 +146,7 @@ func main() {
 	log.Printf("Worker pool started with %d workers", cfg.Worker.Count)
 
 	// Create API server
-	apiServer := api.NewServer(eventQueue, aggManager, tracker, wsHub, pgClient)
+	apiServer := api.NewServer(eventQueue, aggManager, tracker, wsHub, pgClient, apiFetcher)
 
 	// Set up HTTP routes
 	mux := http.NewServeMux()

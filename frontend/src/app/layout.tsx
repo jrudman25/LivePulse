@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import { ClerkProvider, Show, UserButton, SignInButton } from "@clerk/nextjs";
+import Footer from "./Footer";
 import "./globals.css";
 
 const geistSans = Geist({
@@ -70,6 +71,7 @@ export default function RootLayout({
             </header>
 
             <main className="flex-1">{children}</main>
+            <Footer />
           </div>
         </ClerkProvider>
       </body>
