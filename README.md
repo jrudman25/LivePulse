@@ -20,7 +20,9 @@ Chat messages are fired at a phenomenal rate during live events, representing a 
 
 ### 3. Persistent Data Layer (PostgreSQL)
 - **Neon (Serverless Postgres)**: While chats are ephemeral, users and events are persistent. LivePulse uses Neon to reliably map Clerk User IDs and securely store Event start/end times.
-- **Automated Data Ingestion**: The Go backend utilizes `robfig/cron` to deploy an automated background `Worker` pool at 2:00 AM every day. This autonomously hits external APIs (e.g. Ticketmaster), parses incoming daily events, and commits them to the Postgres storage schema automatically.
+- **Top-Tier Global Ingestion**: The Go backend utilizes an automated foreground/background fetch pooling constraint that pulls the 400 absolutely most relevant global events occurring *strictly* within the next 4 hours across Ticketmaster globally!
+- **On-Demand Search Engine**: The platform implements an intercepted infinite search. When a user queries for an obscure event currently outside the top 400, the Go Engine intercepts the HTTP request, hits Ticketmaster directly, and permanently weaves the unique event straight into the Postgres Database on the fly!
+- **Automated DB Garbage Collection**: The Go backend deploys an automated background `Worker` pool via `robfig/cron` at 2:00 AM every day. Aside from replenishing the feed, this cron explicitly executes a powerful Garbage Collector query on the Neo database, automatically shredding any events that concluded more than 1 hour ago to seamlessly preserve free tier constraints natively!
 
 ### 4. Interactive Client (Next.js Frontend)
 - **Next.js 15 App Router**: The client maps heavily to React Server Components (RSC) when rendering the Event Dashboard, passing control off to Client Components exclusively for the Live Chat Arena.
