@@ -11,15 +11,15 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
 
   useEffect(() => {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-    
+
     // Poll Stats
     const pollStats = () => {
-        fetch(`${API_URL}/api/sessions/stats?session_id=${eventId}`)
+      fetch(`${API_URL}/api/sessions/stats?session_id=${eventId}`)
         .then(r => r.json())
         .then(data => {
-            if (data && data.active_user_count !== undefined) {
-               setActiveUsers(data.active_user_count);
-            }
+          if (data && data.active_user_count !== undefined) {
+            setActiveUsers(data.active_user_count);
+          }
         })
         .catch(() => { });
     };
@@ -29,16 +29,16 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
     // Fetch initial favorites if logged in
     if (isSignedIn) {
       getToken().then(token => {
-          fetch(`${API_URL}/api/favorites`, {
-              headers: { "Authorization": `Bearer ${token}` }
-          })
+        fetch(`${API_URL}/api/favorites`, {
+          headers: { "Authorization": `Bearer ${token}` }
+        })
           .then(r => r.json())
           .then(data => {
             if (Array.isArray(data) && data.includes(eventId)) {
-                setIsFavorite(true);
+              setIsFavorite(true);
             }
           })
-          .catch(() => {});
+          .catch(() => { });
       });
     }
 
@@ -61,8 +61,8 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
         headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
         body: JSON.stringify({ event_id: eventId })
       });
-      if (res.ok) setIsFavorite(!isFavorite);
-    } catch (err) {} finally {
+      if (res.ok) {setIsFavorite(!isFavorite);}
+    } catch (_err) { } finally {
       setIsLiking(false);
     }
   };

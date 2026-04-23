@@ -6,14 +6,14 @@ async function fetchEvents(userId: string | null, q: string) {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
     let url = `${API_URL}/api/events`;
     const params = new URLSearchParams();
-    if (userId) params.append("user_id", userId);
-    if (q) params.append("q", q);
+    if (userId) {params.append("user_id", userId);}
+    if (q) {params.append("q", q);}
     
     const qs = params.toString();
-    if (qs) url += `?${qs}`;
+    if (qs) {url += `?${qs}`;}
 
     const res = await fetch(url, { cache: 'no-store' });
-    if (!res.ok) return [];
+    if (!res.ok) {return [];}
     
     const data = await res.json();
     return data || [];
