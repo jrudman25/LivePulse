@@ -33,14 +33,17 @@ func NewAPIFetcher(db *storage.PostgresClient, apiKey string) *APIFetcher {
 
 // Start begins the daily cron jobs to fetch events
 func (f *APIFetcher) Start() {
-	// Schedule to run every day at 2:00 AM
-	_, err := f.cron.AddFunc("0 2 * * *", f.FetchAPIEvents)
+	// Schedule to run every 6 hours to keep events fresh
+	_, err := f.cron.AddFunc("0 */6 * * *", f.FetchAPIEvents)
 	if err != nil {
 		log.Printf("Error scheduling event fetcher: %v", err)
 		return
 	}
 	f.cron.Start()
-	log.Println("Event API fetcher started via cron: scheduled at 02:00 AM daily")
+	log.Println("Event API fetcher started via cron: scheduled every 6 hours")
+
+	// Run an initial fetch on startup so events are available immediately
+	go f.FetchAPIEvents()
 }
 
 // Stop halts the cron scheduler
@@ -95,7 +98,7 @@ func (f *APIFetcher) FetchAPIEvents() {
 
 	now := time.Now().UTC()
 	nowStr := now.Format("2006-01-02T15:04:05Z")
-	endStr := now.Add(4 * time.Hour).Format("2006-01-02T15:04:05Z")
+	endStr := now.Add(24 * time.Hour).Format("2006-01-02T15:04:05Z")
 
 	// Lock fetches perfectly onto verified high-quality event categories natively formatted for URL consumption
 	classificationParams := "classificationName=Music,Sports,Arts%20%26%20Theatre,Comedy,Film"

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -15,9 +16,13 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		// Allow all origins for development
-		// In production, implement proper origin checking
-		return true
+		origin := r.Header.Get("Origin")
+		// Formal CSWSH lockdown mitigating completely cross domain attacks natively
+		allowedOrigins := map[string]bool{
+			"http://localhost:3000":           true,
+			"https://livepulse-hq.vercel.app": true,
+		}
+		return allowedOrigins[origin] || origin == ""
 	},
 }
 
@@ -103,12 +108,12 @@ type Client struct {
 // readPump reads messages from the WebSocket connection
 func (c *Client) readPump(eventQueue *events.Queue) {
 	defer func() {
-		c.hub.unregister <- c
+		if c.userID != "" { // Only safely unregister and alert if formally authenticated!
+			c.hub.unregister <- c
+			leaveEvent := events.LeaveSessionEvent(c.sessionID, c.userID)
+			eventQueue.Enqueue(leaveEvent)
+		}
 		c.conn.Close()
-
-		// Send leave event
-		leaveEvent := events.LeaveSessionEvent(c.sessionID, c.userID)
-		eventQueue.Enqueue(leaveEvent)
 	}()
 
 	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
@@ -134,12 +139,34 @@ func (c *Client) readPump(eventQueue *events.Queue) {
 			continue
 		}
 
-		// Handle different message types
 		msgType, ok := msg["type"].(string)
 		if !ok {
 			continue
 		}
 
+		// Handle Authentication Handshake Securely First
+		if c.userID == "" {
+			if msgType == "authenticate" {
+				token, _ := msg["token"].(string)
+				userID, err := VerifyTokenManually(context.Background(), token)
+				if err != nil {
+					c.send <- []byte(`{"type":"error","message":"Authentication invalid or expired"}`)
+					break // exit pump, closing connection natively
+				}
+				
+				c.userID = userID
+				c.hub.register <- c
+				joinEvent := events.JoinSessionEvent(c.sessionID, c.userID)
+				eventQueue.Enqueue(joinEvent)
+				c.send <- []byte(`{"type":"authenticated"}`)
+				continue
+			} else {
+				c.send <- []byte(`{"type":"error","message":"You must authenticate before sending events"}`)
+				break // kill connection payload natively!
+			}
+		}
+
+		// Handle normal routing if rigorously authenticated
 		switch msgType {
 		case "reaction":
 			reactionType, ok := msg["reaction_type"].(string)
@@ -251,20 +278,11 @@ func (h *WebSocketHub) BroadcastToSession(sessionID string, message interface{})
 	}
 }
 
-// HandleWebSocket handles WebSocket connections
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("session_id")
-	token := r.URL.Query().Get("token")
 
-	if sessionID == "" || token == "" {
-		http.Error(w, "session_id and token are required", http.StatusBadRequest)
-		return
-	}
-
-	// Verify Clerk token
-	userID, err := VerifyTokenManually(r.Context(), token)
-	if err != nil {
-		http.Error(w, "invalid token", http.StatusUnauthorized)
+	if sessionID == "" {
+		http.Error(w, "session_id is required", http.StatusBadRequest)
 		return
 	}
 
@@ -274,26 +292,19 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get or create session hub
+	// Get or create session hub natively
 	hub := s.wsHub.GetOrCreateSessionHub(sessionID)
 
-	// Create client
+	// Create client structurally missing UserID placeholder
 	client := &Client{
 		hub:       hub,
 		conn:      conn,
 		send:      make(chan []byte, 256),
 		sessionID: sessionID,
-		userID:    userID,
+		userID:    "", // Remains blank! Authenticated intrinsically inside readPump!
 	}
 
-	// Register client
-	hub.register <- client
-
-	// Send join event
-	joinEvent := events.JoinSessionEvent(sessionID, userID)
-	s.eventQueue.Enqueue(joinEvent)
-
-	// Start pumps
-	go client.writePump()
+	// Start concurrent pumps instantly to seamlessly wait for Authentication Handshake Payload over encrypted channel
+	go client.writePump() // allows server to natively kickback JSON errors organically.
 	go client.readPump(s.eventQueue)
 }

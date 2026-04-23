@@ -129,7 +129,7 @@ func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, offs
 		query := `
 			SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
 			FROM events
-			WHERE end_time > NOW() - INTERVAL '1 hour' AND start_time <= NOW() + INTERVAL '4 hours' AND title ILIKE '%' || $1 || '%'
+			WHERE end_time > NOW() - INTERVAL '1 hour' AND start_time <= NOW() + INTERVAL '24 hours' AND title ILIKE '%' || $1 || '%'
 			ORDER BY start_time ASC
 			LIMIT $2 OFFSET $3
 		`
@@ -138,7 +138,7 @@ func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, offs
 		query := `
 			SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
 			FROM events
-			WHERE end_time > NOW() - INTERVAL '1 hour' AND start_time <= NOW() + INTERVAL '4 hours'
+			WHERE end_time > NOW() - INTERVAL '1 hour' AND start_time <= NOW() + INTERVAL '24 hours'
 			ORDER BY start_time ASC
 			LIMIT $1 OFFSET $2
 		`
