@@ -20,9 +20,9 @@ Chat messages are fired at a phenomenal rate during live events, representing a 
 
 ### 3. Persistent Data Layer (PostgreSQL)
 - **Neon (Serverless Postgres)**: While chats are ephemeral, users and events are persistent. LivePulse uses Neon to reliably map Clerk User IDs and securely store Event start/end times.
-- **Top-Tier Global Ingestion**: The Go backend utilizes an automated foreground/background fetch pooling constraint that pulls the 400 absolutely most relevant global events occurring *strictly* within the next 4 hours across Ticketmaster globally!
+- **Top-Tier Global Ingestion**: The Go backend utilizes an automated foreground/background fetch pooling constraint that pulls the 400 absolutely most relevant global events occurring within the next 24 hours across Ticketmaster globally!
 - **On-Demand Search Engine**: The platform implements an intercepted infinite search. When a user queries for an obscure event currently outside the top 400, the Go Engine intercepts the HTTP request, hits Ticketmaster directly, and permanently weaves the unique event straight into the Postgres Database on the fly!
-- **Automated DB Garbage Collection**: The Go backend deploys an automated background `Worker` pool via `robfig/cron` at 2:00 AM every day. Aside from replenishing the feed, this cron explicitly executes a powerful Garbage Collector query on the Neo database, automatically shredding any events that concluded more than 1 hour ago to seamlessly preserve free tier constraints natively!
+- **Automated DB Garbage Collection**: The Go backend deploys an automated background `Worker` pool via `robfig/cron` every 6 hours. Aside from replenishing the feed, this cron explicitly executes a powerful Garbage Collector query on the Neon database, automatically shredding any events that concluded more than 1 hour ago to seamlessly preserve free tier constraints natively! An initial fetch also runs on server startup so events are available immediately.
 
 ### 4. Interactive Client (Next.js Frontend)
 - **Next.js 15 App Router**: The client maps heavily to React Server Components (RSC) when rendering the Event Dashboard, passing control off to Client Components exclusively for the Live Chat Arena.
@@ -31,7 +31,9 @@ Chat messages are fired at a phenomenal rate during live events, representing a 
 - **Premium Aesthetics & Defenses**: Built via TailwindCSS, `shadcn/ui`, and Framer Motion to create a highly stylized layout prioritizing premium UI. React hooks (`useWebSocket`) maintain sub-millisecond sync with the Go array and actively intercept any Go backend Payload Refusal metrics dynamically transforming them into sleek "Toast" bounds to stop UX breaking.
 
 ### 5. Security Handshake (Clerk)
-- All connections are guarded by **Clerk Auth**. Instead of native standard headers (which native WebSockets do not support), Next.js encrypts the user's active session JSON Web Token (JWT) into the secure `WSS://` connection string. The Go server catches the token, decrypts it manually, and rigidly maps the payload strictly to the proven sender.
+- All connections are guarded by **Clerk Auth**. The client establishes a WebSocket connection and immediately sends a `{ type: "authenticate", token }` message as its first payload over the encrypted channel. The Go server verifies the JWT before accepting the client into the session Hub — preventing token leakage in URLs, logs, and reverse proxies.
+- **Origin Allowlist**: The WebSocket upgrader enforces a strict CORS origin check, only permitting connections from whitelisted production domains.
+- **Auto-Reconnect**: The frontend implements exponential backoff reconnection (capped at 30s) to gracefully recover from temporary network drops — critical for mobile users at live events.
 
 ---
 
