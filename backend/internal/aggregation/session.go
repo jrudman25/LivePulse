@@ -11,7 +11,7 @@ import (
 // SessionStats holds real-time statistics for a session
 type SessionStats struct {
 	SessionID         string
-	ActiveUsers       map[string]bool // UserID -> active status
+	ActiveUsers       map[string]int // UserID -> active socket connection count
 	ReactionCounts    map[events.ReactionType]*int64
 	TotalReactions    *int64
 	PeakConcurrentUsers int
@@ -26,7 +26,7 @@ func NewSessionStats(sessionID string) *SessionStats {
 	
 	return &SessionStats{
 		SessionID:      sessionID,
-		ActiveUsers:    make(map[string]bool),
+		ActiveUsers:    make(map[string]int),
 		ReactionCounts: map[events.ReactionType]*int64{
 			events.ReactionLike:     new(int64),
 			events.ReactionLove:     new(int64),
@@ -47,7 +47,7 @@ func (s *SessionStats) AddUser(userID string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	s.ActiveUsers[userID] = true
+	s.ActiveUsers[userID]++
 	s.LastActivity = time.Now().UTC()
 	
 	currentCount := len(s.ActiveUsers)
@@ -63,7 +63,12 @@ func (s *SessionStats) RemoveUser(userID string) int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	delete(s.ActiveUsers, userID)
+	if s.ActiveUsers[userID] > 1 {
+		s.ActiveUsers[userID]--
+	} else {
+		delete(s.ActiveUsers, userID)
+	}
+	
 	s.LastActivity = time.Now().UTC()
 	
 	return len(s.ActiveUsers)

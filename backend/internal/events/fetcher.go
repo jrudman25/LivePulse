@@ -6,7 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
+
 	"github.com/jrudman25/livepulse/internal/storage"
 	"github.com/robfig/cron/v3"
 )
@@ -30,14 +33,17 @@ func NewAPIFetcher(db *storage.PostgresClient, apiKey string) *APIFetcher {
 
 // Start begins the daily cron jobs to fetch events
 func (f *APIFetcher) Start() {
-	// Schedule to run every day at 2:00 AM
-	_, err := f.cron.AddFunc("0 2 * * *", f.FetchAPIEvents)
+	// Schedule to run every 6 hours to keep events fresh
+	_, err := f.cron.AddFunc("0 */6 * * *", f.FetchAPIEvents)
 	if err != nil {
 		log.Printf("Error scheduling event fetcher: %v", err)
 		return
 	}
 	f.cron.Start()
-	log.Println("Event API fetcher started via cron: scheduled at 02:00 AM daily")
+	log.Println("Event API fetcher started via cron: scheduled every 6 hours")
+
+	// Run an initial fetch on startup so events are available immediately
+	go f.FetchAPIEvents()
 }
 
 // Stop halts the cron scheduler
@@ -90,31 +96,147 @@ func (f *APIFetcher) FetchAPIEvents() {
 
 	log.Println("Fetching new events from Ticketmaster API...")
 
+	now := time.Now().UTC()
+	nowStr := now.Format("2006-01-02T15:04:05Z")
+	endStr := now.Add(24 * time.Hour).Format("2006-01-02T15:04:05Z")
+
+	// Lock fetches perfectly onto verified high-quality event categories natively formatted for URL consumption
+	classificationParams := "classificationName=Music,Sports,Arts%20%26%20Theatre,Comedy,Film"
+
+	for page := 0; page < 2; page++ {
+		exitLoop := func() bool {
+			urlQuery := fmt.Sprintf("https://app.ticketmaster.com/discovery/v2/events.json?apikey=%s&size=200&page=%d&sort=relevance,desc&startDateTime=%s&endDateTime=%s&%s", f.apiKey, page, nowStr, endStr, classificationParams)
+			resp, err := http.Get(urlQuery)
+			if err != nil {
+				log.Printf("Error requesting TM API on page %d: %v", page, err)
+				return true
+			}
+			defer resp.Body.Close()
+
+			if resp.StatusCode != http.StatusOK {
+				log.Printf("TM API returned status code %d on page %d (likely exhausted Timeline events), halting pagination.", resp.StatusCode, page)
+				return true
+			}
+
+			var tmResp TMResponse
+			if err := json.NewDecoder(resp.Body).Decode(&tmResp); err != nil {
+				log.Printf("Error decoding TM API JSON: %v", err)
+				return true
+			}
+
+			for _, tmEvent := range tmResp.Embedded.Events {
+				startTime, err := time.Parse(time.RFC3339, tmEvent.Dates.Start.DateTime)
+				if err != nil {
+					// Skip generic events that lack a rigid start date entirely
+					log.Printf("Skipping event with invalid date: %s", tmEvent.Name)
+					continue
+				}
+
+				eventType := "Event"
+				if len(tmEvent.Classifications) > 0 {
+					eventType = tmEvent.Classifications[0].Segment.Name
+				}
+
+				// Aggressive fallback safety filter rejecting generic "Miscellaneous"
+				importType := eventType
+				if importType == "Miscellaneous" || importType == "Undefined" {
+					continue
+				}
+
+				locationStr := "TBA"
+				countryStr := "US"
+				if len(tmEvent.Embedded.Venues) > 0 {
+					venue := tmEvent.Embedded.Venues[0]
+					if venue.Name != "" {
+						locationStr = venue.Name
+						if venue.City.Name != "" && venue.State.StateCode != "" {
+							locationStr = fmt.Sprintf("%s (%s, %s)", venue.Name, venue.City.Name, venue.State.StateCode)
+						}
+					}
+					if venue.Country.CountryCode != "" {
+						countryStr = venue.Country.CountryCode
+					}
+				}
+
+				// Database logic will purge legacy data. Future fetched data is shielded organically above by classification limits.
+				titleLower := strings.ToLower(tmEvent.Name)
+				isJunk := false
+				for _, keyword := range []string{"parking", "permit", "vip club", "shuttle", "camping", "add-on"} {
+					if strings.Contains(titleLower, keyword) {
+						isJunk = true
+						break
+					}
+				}
+				if isJunk {
+					log.Printf("Skipping metadata junk pass: %s", tmEvent.Name)
+					continue
+				}
+
+				e := storage.Event{
+					ID:            tmEvent.ID,
+					Type:          eventType,
+					Title:         tmEvent.Name,
+					Location:      locationStr,
+					Country:       countryStr,
+					StartTime:     startTime,
+					EndTime:       startTime.Add(3 * time.Hour), // TM strict end-times are often missing, 3 hours is a safe heuristic
+					ExternalAPIID: tmEvent.ID,
+					CreatedAt:     time.Now(),
+				}
+
+				if err := f.db.InsertEvent(context.Background(), e); err != nil {
+					log.Printf("Failed to insert event %s: %v", e.ExternalAPIID, err)
+				} else {
+					log.Printf("Successfully ingested event: %s", e.Title)
+				}
+			}
+
+			return false
+		}()
+
+		if exitLoop {
+			break
+		}
+	}
+
+	// Trigger PostgreSQL garbage collector to natively erase dead history mapping explicitly to -1 Hour constraints
+	if err := f.db.DeleteExpiredEvents(context.Background()); err != nil {
+		log.Printf("Error deleting expired events from DB: %v", err)
+	} else {
+		log.Println("Pristinely swept database of legacy expired events.")
+	}
+}
+
+// FetchSearchKeyword provides infinite On-Demand database insertion by aggressively searching Ticketmaster natively
+func (f *APIFetcher) FetchSearchKeyword(keyword string) {
+	if f.apiKey == "" || f.apiKey == "your_ticketmaster_api_key" {
+		return
+	}
+
 	nowStr := time.Now().UTC().Format("2006-01-02T15:04:05Z")
-	url := fmt.Sprintf("https://app.ticketmaster.com/discovery/v2/events.json?apikey=%s&size=30&sort=date,asc&startDateTime=%s", f.apiKey, nowStr)
-	resp, err := http.Get(url)
+	safeKeyword := url.QueryEscape(keyword)
+	urlQuery := fmt.Sprintf("https://app.ticketmaster.com/discovery/v2/events.json?apikey=%s&size=50&sort=date,asc&startDateTime=%s&keyword=%s", f.apiKey, nowStr, safeKeyword)
+
+	resp, err := http.Get(urlQuery)
 	if err != nil {
-		log.Printf("Error requesting TM API: %v", err)
+		log.Printf("Error requesting TM search API: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		log.Printf("TM API returned status code: %d", resp.StatusCode)
 		return
 	}
 
 	var tmResp TMResponse
 	if err := json.NewDecoder(resp.Body).Decode(&tmResp); err != nil {
-		log.Printf("Error decoding TM API JSON: %v", err)
 		return
 	}
 
 	for _, tmEvent := range tmResp.Embedded.Events {
 		startTime, err := time.Parse(time.RFC3339, tmEvent.Dates.Start.DateTime)
 		if err != nil {
-			// Fallback to exactly tomorrow if TM date is missing or malformed
-			startTime = time.Now().Add(24 * time.Hour) 
+			continue
 		}
 
 		eventType := "Event"
@@ -144,15 +266,12 @@ func (f *APIFetcher) FetchAPIEvents() {
 			Location:      locationStr,
 			Country:       countryStr,
 			StartTime:     startTime,
-			EndTime:       startTime.Add(3 * time.Hour), // TM strict end-times are often missing, 3 hours is a safe heuristic
+			EndTime:       startTime.Add(3 * time.Hour),
 			ExternalAPIID: tmEvent.ID,
 			CreatedAt:     time.Now(),
 		}
 
-		if err := f.db.InsertEvent(context.Background(), e); err != nil {
-			log.Printf("Failed to insert event %s: %v", e.ExternalAPIID, err)
-		} else {
-			log.Printf("Successfully ingested event: %s", e.Title)
-		}
+		// Insert silently to maintain user velocity!
+		f.db.InsertEvent(context.Background(), e)
 	}
 }

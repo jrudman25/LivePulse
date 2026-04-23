@@ -22,29 +22,43 @@ export function useWebSocket(sessionId: string) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isConnected, setIsConnected] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const reconnectAttempt = useRef(0);
 
   useEffect(() => {
-    if (!sessionId) return;
+    if (!sessionId) {return;}
     
     let isMounted = true;
+    let reconnectTimeoutId: NodeJS.Timeout;
 
     const connect = async () => {
       try {
         const token = await getToken();
-        if (!token) return;
+        if (!token) {return;}
 
         // Ensure this points to the external Go server address dynamically
         const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080";
-        const url = `${WS_URL}/ws?session_id=${sessionId}&token=${token}`;
+        // Token strictly removed from URL parameters intrinsically blocking Leakage
+        const url = `${WS_URL}/ws?session_id=${sessionId}`;
         const ws = new WebSocket(url);
 
         ws.onopen = () => {
-          if (isMounted) setIsConnected(true);
+          if (isMounted) {
+            setIsConnected(true);
+            reconnectAttempt.current = 0; // Reset intrinsically on success
+          }
+          // Authenticate autonomously as absolutely first action over encrypted Socket
+          ws.send(JSON.stringify({ type: "authenticate", token }));
         };
 
         ws.onclose = () => {
-          if (isMounted) setIsConnected(false);
-          // Future feature: exponential backoff reconnect logic
+          if (isMounted) {
+            setIsConnected(false);
+            // Exponential backoff structurally clamped to 30 second maximum ceilings natively
+            const delay = Math.min(1000 * Math.pow(2, reconnectAttempt.current), 30000);
+            reconnectAttempt.current += 1;
+            console.log(`WebSocket connection dropped gracefully. Attempting retry #${reconnectAttempt.current} natively in ${delay}ms`);
+            reconnectTimeoutId = setTimeout(connect, delay);
+          }
         };
 
         ws.onmessage = (event) => {
@@ -52,7 +66,7 @@ export function useWebSocket(sessionId: string) {
             const data: WSEvent = JSON.parse(event.data);
             if (data.type === "chat") {
               setMessages((prev) => {
-                if (prev.some(m => m.id === data.message.id)) return prev;
+                if (prev.some(m => m.id === data.message.id)) {return prev;}
                 return [...prev, data.message];
               });
             } else if (data.type === "error") {
@@ -75,6 +89,7 @@ export function useWebSocket(sessionId: string) {
 
     return () => {
       isMounted = false;
+      clearTimeout(reconnectTimeoutId); // Clean structurally
       if (wsRef.current) {
         wsRef.current.close();
       }

@@ -48,7 +48,7 @@ export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
   }, [debouncedQuery, pathname, router, searchParamsString]);
 
   const loadMoreEvents = async () => {
-    if (isLoading || !hasMore) return;
+    if (isLoading || !hasMore) {return;}
     setIsLoading(true);
 
     try {
@@ -76,9 +76,9 @@ export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
   const countries = ["All", ...Array.from(new Set(events.map(e => e.country).filter(Boolean)))];
 
   const filteredEvents = events.filter(e => {
-    if (filterType !== "All" && e.type !== filterType) return false;
-    if (filterCountry !== "All" && e.country !== filterCountry) return false;
-    if (filterFavorites === "Favorites" && !e.is_favorite) return false;
+    if (filterType !== "All" && e.type !== filterType) {return false;}
+    if (filterCountry !== "All" && e.country !== filterCountry) {return false;}
+    if (filterFavorites === "Favorites" && !e.is_favorite) {return false;}
     return true;
   });
 

@@ -3,8 +3,8 @@ package api
 import (
 	"encoding/json"
 	"net/http"
-	"time"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jrudman25/livepulse/internal/aggregation"
@@ -20,6 +20,7 @@ type Server struct {
 	tracker    *milestones.Tracker
 	wsHub      *WebSocketHub
 	db         *storage.PostgresClient
+	apiFetcher *events.APIFetcher
 }
 
 // NewServer creates a new API server
@@ -29,6 +30,7 @@ func NewServer(
 	tracker *milestones.Tracker,
 	wsHub *WebSocketHub,
 	db *storage.PostgresClient,
+	apiFetcher *events.APIFetcher,
 ) *Server {
 	return &Server{
 		eventQueue: eventQueue,
@@ -36,6 +38,7 @@ func NewServer(
 		tracker:    tracker,
 		wsHub:      wsHub,
 		db:         db,
+		apiFetcher: apiFetcher,
 	}
 }
 
@@ -189,13 +192,18 @@ func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
 	userID := r.URL.Query().Get("user_id")
 	q := r.URL.Query().Get("q")
 	offsetStr := r.URL.Query().Get("offset")
-	
+
 	offset := 0
 	if val, err := strconv.Atoi(offsetStr); err == nil {
 		offset = val
 	}
-	
-	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 50, offset, q)
+
+	// Infinite Search Interceptor: Fire to TM specifically if query isn't empty, gracefully load DB implicitly!
+	if q != "" {
+		s.apiFetcher.FetchSearchKeyword(q)
+	}
+
+	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 200, offset, q)
 	if err != nil {
 		http.Error(w, "Failed to retrieve events", http.StatusInternalServerError)
 		return

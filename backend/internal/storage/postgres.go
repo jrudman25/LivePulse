@@ -129,7 +129,7 @@ func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, offs
 		query := `
 			SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
 			FROM events
-			WHERE end_time > NOW() AND title ILIKE '%' || $1 || '%'
+			WHERE end_time > NOW() - INTERVAL '1 hour' AND start_time <= NOW() + INTERVAL '24 hours' AND title ILIKE '%' || $1 || '%'
 			ORDER BY start_time ASC
 			LIMIT $2 OFFSET $3
 		`
@@ -138,7 +138,7 @@ func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, offs
 		query := `
 			SELECT id, type, title, location, country, start_time, end_time, external_api_id, created_at
 			FROM events
-			WHERE end_time > NOW()
+			WHERE end_time > NOW() - INTERVAL '1 hour' AND start_time <= NOW() + INTERVAL '24 hours'
 			ORDER BY start_time ASC
 			LIMIT $1 OFFSET $2
 		`
@@ -222,4 +222,11 @@ func (db *PostgresClient) GetUserFavorites(ctx context.Context, userID string) (
 		eventIDs = append(eventIDs, id)
 	}
 	return eventIDs, nil
+}
+
+// DeleteExpiredEvents naturally shreds dead events securely preserving maximum Neon Storage limits natively
+func (db *PostgresClient) DeleteExpiredEvents(ctx context.Context) error {
+	query := `DELETE FROM events WHERE end_time <= NOW() - INTERVAL '1 hour'`
+	_, err := db.pool.Exec(ctx, query)
+	return err
 }
