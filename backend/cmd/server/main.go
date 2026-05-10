@@ -9,13 +9,13 @@ import (
 	"syscall"
 	"time"
 
+	goaway "github.com/TwiN/go-away"
 	"github.com/jrudman25/livepulse/config"
 	"github.com/jrudman25/livepulse/internal/aggregation"
 	"github.com/jrudman25/livepulse/internal/api"
 	"github.com/jrudman25/livepulse/internal/events"
 	"github.com/jrudman25/livepulse/internal/milestones"
 	"github.com/jrudman25/livepulse/internal/storage"
-	"github.com/TwiN/go-away"
 )
 
 func main() {
@@ -123,11 +123,12 @@ func main() {
 					AuthorName: authorName,
 					Timestamp:  event.Timestamp,
 				}
-				
-				// Save to Redis
-				if err := redisClient.SaveChatMessage(context.Background(), event.SessionID, chatMsg); err != nil {
+
+				redisCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+				if err := redisClient.SaveChatMessage(redisCtx, event.SessionID, chatMsg); err != nil {
 					log.Printf("Error saving chat message to redis: %v", err)
 				}
+				cancel()
 
 				// Broadcast
 				wsHub.BroadcastToSession(event.SessionID, map[string]interface{}{
@@ -164,7 +165,7 @@ func main() {
 	mux.HandleFunc("/api/events", api.Chain(apiServer.HandleGetLiveEvents, api.LoggingMiddleware, api.CORSMiddleware))
 	mux.HandleFunc("/api/events/single", api.Chain(apiServer.HandleGetEvent, api.LoggingMiddleware, api.CORSMiddleware))
 	mux.HandleFunc("/api/favorites", api.Chain(apiServer.HandleToggleFavorite, api.LoggingMiddleware, api.CORSMiddleware, api.ClerkMiddleware))
-	
+
 	// Admin trigger for Ticketmaster
 	mux.HandleFunc("/api/admin/trigger-fetch", api.Chain(func(w http.ResponseWriter, r *http.Request) {
 		go apiFetcher.FetchAPIEvents()

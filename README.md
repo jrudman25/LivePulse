@@ -44,3 +44,21 @@ Chat messages are fired at a phenomenal rate during live events, representing a 
 **Databases:** Neon (PostgreSQL), Upstash (Redis)
 **Authentication:** Clerk JWT Middleware
 **Testing:** Jest, Go Test (Testify)
+
+---
+
+## WebSocket Benchmarking
+
+The backend includes a standalone WebSocket benchmark CLI for measuring Clerk authentication handshake latency and chat broadcast round-trip latency.
+
+```powershell
+$env:LIVEPULSE_WS_TOKEN="your_clerk_jwt"
+go run .\cmd\wsbench -url ws://localhost:8080 -session wsbench-local -clients 10 -messages 20 -warmup 2
+```
+
+For deployed testing, pass the deployed WebSocket base URL:
+
+```powershell
+$env:LIVEPULSE_WS_TOKEN="your_clerk_jwt"
+go run .\cmd\wsbench -url wss://your-backend.example.com -session wsbench-prod -clients 10 -messages 20 -warmup 2
+```
