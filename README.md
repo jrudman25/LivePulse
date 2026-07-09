@@ -49,7 +49,7 @@ Chat messages are fired at a phenomenal rate during live events, representing a 
 
 ## WebSocket Benchmarking
 
-The backend includes a standalone WebSocket benchmark CLI for measuring Clerk authentication handshake latency and chat broadcast round-trip latency.
+The backend includes a standalone WebSocket benchmark CLI for measuring Clerk authentication handshake latency and chat broadcast round-trip latency. See [BENCHMARK.md](BENCHMARK.md) for my latest deployed benchmark results.
 
 ```powershell
 $env:LIVEPULSE_WS_TOKEN="your_clerk_jwt"
