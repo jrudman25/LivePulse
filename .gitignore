@@ -28,9 +28,6 @@ go.work
 .DS_Store
 Thumbs.db
 
-*.md
-!README.md
-
 node_modules/
 .pnp
 .pnp.*
