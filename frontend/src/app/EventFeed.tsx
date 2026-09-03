@@ -2,10 +2,11 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useDebounce } from "use-debounce";
-import EventCard from "./EventCard";
+import EventCard, { type EventItem } from "./EventCard";
 
-export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
+export default function EventFeed({ initialEvents }: { initialEvents: EventItem[] }) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -17,7 +18,7 @@ export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
   const [debouncedQuery] = useDebounce(searchQuery, 500);
 
   // Pagination State mappings natively decoupled from Server Component
-  const [events, setEvents] = useState<any[]>(initialEvents);
+  const [events, setEvents] = useState<EventItem[]>(initialEvents);
   const [offset, setOffset] = useState<number>(initialEvents.length);
   const [hasMore, setHasMore] = useState<boolean>(initialEvents.length === 50);
   const [isLoading, setIsLoading] = useState<boolean>(false);
@@ -38,12 +39,12 @@ export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
     } else {
       params.delete("q");
     }
-    
+
     // Extracted into a string, if the new URL parameters match the exact parameters currently live, we abort replacing
     // to prevent circular useEffect infinite API polling!
     const newQueryString = params.toString();
     if (newQueryString !== searchParamsString) {
-      router.replace(`${pathname}?${newQueryString}`, { scroll: false });
+      router.replace(newQueryString ? `${pathname}?${newQueryString}` : pathname, { scroll: false });
     }
   }, [debouncedQuery, pathname, router, searchParamsString]);
 
@@ -52,15 +53,15 @@ export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
     setIsLoading(true);
 
     try {
-      const q = searchParamsString ? `&q=${encodeURIComponent(debouncedQuery)}` : "";
+      const q = debouncedQuery ? `&q=${encodeURIComponent(debouncedQuery)}` : "";
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
       const res = await fetch(`${API_URL}/api/events?offset=${offset}${q}`);
       const data = await res.json();
-      
+
       if (!data || data.length < 50) {
         setHasMore(false);
       }
-      
+
       if (data && data.length > 0) {
         setEvents(prev => [...prev, ...data]);
         setOffset(prev => prev + data.length);
@@ -72,8 +73,8 @@ export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
     }
   };
 
-  const types = ["All", ...Array.from(new Set(events.map(e => e.type).filter(Boolean)))];
-  const countries = ["All", ...Array.from(new Set(events.map(e => e.country).filter(Boolean)))];
+  const types = ["All", ...Array.from(new Set(events.flatMap(e => e.type ? [e.type] : [])))];
+  const countries = ["All", ...Array.from(new Set(events.flatMap(e => e.country ? [e.country] : [])))];
 
   const filteredEvents = events.filter(e => {
     if (filterType !== "All" && e.type !== filterType) {return false;}
@@ -86,74 +87,80 @@ export default function EventFeed({ initialEvents }: { initialEvents: any[] }) {
     setEvents(prev => prev.map(ev => ev.id === id ? { ...ev, is_favorite: isFav } : ev));
   };
 
+  const clearFilters = () => {
+    setFilterType("All");
+    setFilterCountry("All");
+    setFilterFavorites("All");
+    setSearchQuery("");
+  };
+
+  const hasActiveFilters = filterType !== "All" || filterCountry !== "All" || filterFavorites !== "All" || searchQuery !== "";
+
   return (
     <div>
-      <div className="flex flex-col sm:flex-row gap-4 mb-8">
-         <div className="flex-1 flex flex-col gap-1">
-           <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1">Search Events</label>
-           <input 
-              type="text"
-              placeholder="Search by title..."
-              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500 transition-all font-medium w-full"
-              value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
-           />
-         </div>
-         <div className="flex flex-col gap-1">
-           <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1">Event Type</label>
-           <select 
-              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500 transition-all font-medium min-w-[180px]"
-              value={filterType} onChange={e => setFilterType(e.target.value)}>
-               {types.map(t => <option key={t as string} value={t as string} className="bg-slate-900">{t as string}</option>)}
-           </select>
-         </div>
-         <div className="flex flex-col gap-1">
-           <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1">Country</label>
-           <select 
-              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500 transition-all font-medium min-w-[180px]"
-              value={filterCountry} onChange={e => setFilterCountry(e.target.value)}>
-               {countries.map(c => <option key={c as string} value={c as string} className="bg-slate-900">{c === "All" ? "All Countries" : c as string}</option>)}
-           </select>
-         </div>
-         <div className="flex flex-col gap-1">
-           <label className="text-xs font-semibold uppercase tracking-wider text-slate-500 pl-1">Status</label>
-           <select 
-              className="bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white focus:outline-none focus:border-fuchsia-500 focus:ring-1 focus:ring-fuchsia-500 transition-all font-medium min-w-[160px]"
-              value={filterFavorites} onChange={e => setFilterFavorites(e.target.value)}>
-               <option value="All" className="bg-slate-900">All Events</option>
-               <option value="Favorites" className="bg-slate-900">Favorites Only</option>
-           </select>
-         </div>
+      <div className="mb-8 border-y border-[#67625b]">
+        <div className="grid lg:grid-cols-[minmax(260px,1fr)_repeat(3,minmax(150px,0.4fr))]">
+          <label className="group relative border-b border-[#45413c] lg:border-r lg:border-b-0">
+            <span className="sr-only">Search Events</span>
+            <Search className="absolute left-4 top-1/2 h-4 w-4 -translate-y-1/2 text-[#67625b] transition-colors group-focus-within:text-[#ed2f24]" aria-hidden="true" />
+            <input
+              type="search"
+              placeholder="Search the event wire"
+              className="h-14 w-full bg-transparent pr-4 pl-12 text-sm text-[#f2efe8] placeholder:text-[#67625b] focus:bg-[#171614] focus:outline-none"
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+            />
+          </label>
+          <label className="grid grid-cols-[1fr_auto] items-center border-b border-[#45413c] px-4 lg:border-r lg:border-b-0">
+            <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#67625b]">Type</span>
+            <select className="h-14 max-w-[120px] bg-transparent text-right text-sm font-medium text-[#f2efe8] focus:outline-none" value={filterType} onChange={e => setFilterType(e.target.value)}>
+              {types.map(t => <option key={t as string} value={t as string} className="bg-[#171614]">{t as string}</option>)}
+            </select>
+          </label>
+          <label className="grid grid-cols-[1fr_auto] items-center border-b border-[#45413c] px-4 lg:border-r lg:border-b-0">
+            <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#67625b]">Region</span>
+            <select className="h-14 max-w-[140px] bg-transparent text-right text-sm font-medium text-[#f2efe8] focus:outline-none" value={filterCountry} onChange={e => setFilterCountry(e.target.value)}>
+              {countries.map(c => <option key={c as string} value={c as string} className="bg-[#171614]">{c === "All" ? "All Countries" : c as string}</option>)}
+            </select>
+          </label>
+          <label className="grid grid-cols-[1fr_auto] items-center px-4">
+            <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#67625b]">Saved</span>
+            <select className="h-14 max-w-[140px] bg-transparent text-right text-sm font-medium text-[#f2efe8] focus:outline-none" value={filterFavorites} onChange={e => setFilterFavorites(e.target.value)}>
+              <option value="All" className="bg-[#171614]">All Events</option>
+              <option value="Favorites" className="bg-[#171614]">Favorites Only</option>
+            </select>
+          </label>
+        </div>
+      </div>
+
+      <div className="mb-4 flex items-center justify-between gap-4 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#aaa49b]">
+        <span className="flex items-center gap-2"><SlidersHorizontal className="h-3.5 w-3.5" aria-hidden="true" />{filteredEvents.length} results</span>
+        {hasActiveFilters && (
+          <button onClick={clearFilters} className="flex items-center gap-2 transition-colors hover:text-[#f2efe8]"><X className="h-3.5 w-3.5" aria-hidden="true" />Clear filters</button>
+        )}
       </div>
 
       {filteredEvents.length === 0 ? (
-        <div className="flex flex-col items-center justify-center p-12 bg-white/5 border border-white/10 rounded-2xl text-center shadow-lg backdrop-blur-sm">
-          <p className="text-slate-400 font-medium">No events found matching those filters.</p>
-          <button onClick={() => { setFilterType("All"); setFilterCountry("All"); setFilterFavorites("All"); setSearchQuery(""); }} className="mt-4 px-6 py-2 rounded-full border border-white/10 hover:bg-white/10 transition-colors text-white text-sm font-semibold">
-            Clear Filters
-          </button>
+        <div className="grid min-h-[280px] place-items-center border border-[#45413c] bg-[#171614] p-8 text-center">
+          <div>
+            <p className="font-heading text-4xl font-bold uppercase tracking-[-0.03em] text-[#f2efe8]">No events found</p>
+            <p className="mt-2 text-sm text-[#aaa49b]">Nothing on the wire matches those filters.</p>
+            <button onClick={clearFilters} className="mt-6 border border-[#67625b] px-5 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#f2efe8] transition-colors hover:bg-[#f2efe8] hover:text-[#11100f]">Reset the desk</button>
+          </div>
         </div>
       ) : (
         <>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-            {filteredEvents.map(event => (
-              <EventCard key={event.id} event={event} onFavoriteToggle={handleFavoriteUpdate} />
+          <div className="border-t border-[#45413c]">
+            {filteredEvents.map((event, index) => (
+              <EventCard key={event.id} event={event} index={index} onFavoriteToggle={handleFavoriteUpdate} />
             ))}
           </div>
 
           {/* Infinity Scroll Load More UX Mapping */}
           {hasMore && (
-            <div className="mt-12 flex justify-center">
-              <button 
-                onClick={loadMoreEvents} 
-                disabled={isLoading}
-                className="bg-gradient-to-r from-fuchsia-600/80 to-blue-600/80 hover:from-fuchsia-500 hover:to-blue-500 border border-white/10 disabled:opacity-50 text-white rounded-full px-10 py-3 font-semibold transition-all shadow-[0_0_20px_rgba(217,70,239,0.2)] disabled:shadow-none min-w-[200px]"
-              >
-                {isLoading ? (
-                  <span className="flex items-center justify-center gap-2">
-                    <svg className="animate-spin h-4 w-4 text-white" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                    Loading...
-                  </span>
-                ) : "Load More Events"}
+            <div className="mt-10 flex justify-center">
+              <button onClick={loadMoreEvents} disabled={isLoading} className="min-w-[220px] bg-[#ed2f24] px-7 py-4 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[#fffaf2] transition-colors hover:bg-[#f2efe8] hover:text-[#11100f] disabled:cursor-wait disabled:bg-[#45413c] disabled:text-[#aaa49b]">
+                {isLoading ? "Loading..." : "Load more events"}
               </button>
             </div>
           )}
