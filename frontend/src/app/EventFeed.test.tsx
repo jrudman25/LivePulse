@@ -1,10 +1,11 @@
 import { render, screen, fireEvent } from '@testing-library/react';
 import EventFeed from './EventFeed';
+import type { EventItem } from './EventCard';
 import React from 'react';
 
 // Mocking EventCard so we don't accidentally execute background React API fetch hooks inside testing environments
 jest.mock('./EventCard', () => {
-  return function MockEventCard({ event }: { event: any }) {
+  return function MockEventCard({ event }: { event: EventItem }) {
     return <div data-testid="event-card">{event.title}</div>;
   };
 });
