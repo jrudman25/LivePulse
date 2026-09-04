@@ -1,22 +1,31 @@
 import type { Metadata, Viewport } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import Link from "next/link";
+import { Barlow_Condensed, IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import { ClerkProvider, Show, UserButton, SignInButton } from "@clerk/nextjs";
 import Footer from "./Footer";
 import "./globals.css";
 
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+const body = IBM_Plex_Sans({
+  variable: "--font-body",
   subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
-const geistMono = Geist_Mono({
-  variable: "--font-geist-mono",
+const display = Barlow_Condensed({
+  variable: "--font-display",
   subsets: ["latin"],
+  weight: ["500", "600", "700", "800", "900"],
+});
+
+const mono = IBM_Plex_Mono({
+  variable: "--font-plex-mono",
+  subsets: ["latin"],
+  weight: ["400", "500", "600"],
 });
 
 export const metadata: Metadata = {
-  title: "LivePulse",
-  description: "Real-time sidekick for live events.",
+  title: "LivePulse | The live event desk",
+  description: "Find the room. Join the crowd. Follow live events as they happen.",
   manifest: "/manifest.json",
   appleWebApp: {
     capable: true,
@@ -26,10 +35,9 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#000000",
+  themeColor: "#11100f",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
 };
 
 export default function RootLayout({
@@ -39,32 +47,32 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en" className="dark">
-      <body className={`${geistSans.variable} ${geistMono.variable} min-h-screen bg-black text-slate-50 antialiased selection:bg-fuchsia-500/30`}>
+      <body className={`${body.variable} ${display.variable} ${mono.variable} min-h-screen bg-background text-foreground antialiased`}>
         <ClerkProvider>
           <div className="relative flex min-h-screen flex-col bg-background">
             {/* Ambient Background Glows */}
-            <div className="fixed top-0 -z-10 h-full w-full bg-black">
-              <div className="absolute bottom-auto left-auto right-0 top-0 h-[500px] w-[500px] -translate-x-[30%] translate-y-[20%] rounded-full bg-[rgba(173,109,244,0.15)] opacity-50 blur-[80px] pointer-events-none"></div>
-              <div className="absolute bottom-0 left-0 right-auto top-auto h-[500px] w-[500px] translate-x-[10%] -translate-y-[20%] rounded-full bg-[rgba(45,115,255,0.15)] opacity-50 blur-[80px] pointer-events-none"></div>
-            </div>
-            
+            <div className="pointer-events-none fixed inset-0 -z-10 bg-[#11100f]" />
+
             {/* Sticky Navigation / Header Placeholder */}
-            <header className="sticky top-0 z-50 w-full border-b border-white/10 bg-black/50 backdrop-blur-xl">
-              <div className="container mx-auto flex h-16 items-center justify-between px-4">
-                <div className="flex items-center gap-2">
-                  <div className="h-8 w-8 rounded-full bg-gradient-to-br from-fuchsia-500 to-blue-500 flex items-center justify-center shadow-[0_0_15px_rgba(217,70,239,0.5)]">
-                    <span className="text-white font-bold text-lg leading-none">L</span>
-                  </div>
-                  <span className="font-bold text-xl tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-white/60">LivePulse</span>
-                </div>
+            <header className="sticky top-0 z-50 w-full border-b border-[#45413c] bg-[#11100f]/95 backdrop-blur-md">
+              <div className="mx-auto grid h-[72px] w-full max-w-[1600px] grid-cols-[1fr_auto] items-center px-4 sm:px-6 lg:grid-cols-[1fr_auto_1fr] lg:px-10">
+                <Link href="/" className="group flex w-fit items-center gap-3" aria-label="LivePulse home">
+                  <span className="grid h-9 w-9 place-items-center bg-[#ed2f24] font-heading text-xl font-black text-[#fffaf2] transition-transform group-hover:-rotate-3">LP</span>
+                  <span className="font-heading text-2xl font-extrabold uppercase tracking-[-0.03em] text-[#f2efe8]">LivePulse</span>
+                </Link>
+                <nav className="hidden items-center gap-8 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[#aaa49b] lg:flex" aria-label="Primary navigation">
+                  <Link href="/events" className="transition-colors hover:text-[#f2efe8]">Events</Link>
+                  <Link href="/help" className="transition-colors hover:text-[#f2efe8]">Help & FAQ</Link>
+                  <Link href="/privacy" className="transition-colors hover:text-[#f2efe8]">Privacy</Link>
+                </nav>
                 <div className="flex items-center justify-end gap-4">
                   <Show when="signed-out">
                     <SignInButton>
-                      <button className="rounded-full bg-white/10 px-5 py-2 text-sm font-semibold text-white transition-colors hover:bg-white/20">Sign In</button>
+                      <button className="border border-[#67625b] px-4 py-2 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-[#f2efe8] transition-colors hover:border-[#f2efe8] hover:bg-[#f2efe8] hover:text-[#11100f]">Sign in</button>
                     </SignInButton>
                   </Show>
                   <Show when="signed-in">
-                    <UserButton appearance={{ elements: { avatarBox: "h-9 w-9 ring-2 ring-fuchsia-500/50 hover:ring-fuchsia-400 transition-all" } }} />
+                    <UserButton appearance={{ elements: { avatarBox: "h-9 w-9 rounded-none ring-1 ring-[#67625b] transition-all hover:ring-[#f2efe8]" } }} />
                   </Show>
                 </div>
               </div>

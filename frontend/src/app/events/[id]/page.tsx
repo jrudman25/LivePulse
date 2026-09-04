@@ -2,57 +2,125 @@ import ChatRoom from "./ChatRoom";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
+import { ArrowLeft, CalendarDays, LockKeyhole, MapPin } from "lucide-react";
 import ArenaStatsTracker from "./ArenaStatsTracker";
+
+type EventDetails = {
+  id: string;
+  title: string;
+  type?: string;
+  location?: string;
+  country?: string;
+  start_time?: string;
+  end_time?: string;
+};
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { userId } = await auth();
-  
-  let eventTitle = "Live Session";
+
+  let event: EventDetails = { id, title: "Live Session" };
   let isEventFound = true;
+  let eventFetchFailed = false;
   try {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-    const res = await fetch(`${API_URL}/api/events/single?id=${id}`, { cache: 'no-store' });
+    const res = await fetch(`${API_URL}/api/events/single?id=${id}`, { cache: "no-store" });
     if (res.ok) {
-        const data = await res.json();
-        eventTitle = data.title || "Live Session";
+      const data = await res.json();
+      event = { ...event, ...data, title: data.title || "Live Session" };
     } else if (res.status === 404) {
-        isEventFound = false;
+      isEventFound = false;
+    } else {
+      eventFetchFailed = true;
     }
   } catch (e) {
     console.error("Failed to fetch event title:", e);
+    eventFetchFailed = true;
   }
 
   if (!isEventFound) {
-      notFound();
+    notFound();
   }
 
-  return (
-    <div className="container mx-auto p-4 md:p-8 h-[85vh] flex flex-col">
-      <div className="flex flex-col md:flex-row md:items-end justify-between border-b border-white/5 pb-6">
-        <div className="flex flex-col relative w-full">
-          <Link href="/events" className="text-fuchsia-400 hover:text-fuchsia-300 text-sm font-semibold flex items-center transition-colors w-fit group mb-1">
-            <span className="mr-1 group-hover:-translate-x-1 transition-transform">&larr;</span> Back to Events
+  if (eventFetchFailed) {
+    return (
+      <div className="mx-auto grid min-h-[calc(100vh-72px)] w-full max-w-[1600px] place-items-center border-x border-[#45413c] p-5">
+        <div role="alert" className="w-full max-w-2xl border border-[#ed2f24] bg-[#2c1513] p-8 text-center sm:p-12">
+          <p className="font-heading text-5xl font-bold uppercase tracking-[-0.015em] text-[#f2efe8]">Event unavailable</p>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#d1cbc1]">This event could not be verified with the API, so its room has not been opened.</p>
+          <Link href="/events" className="mt-7 inline-flex items-center gap-3 border border-[#67625b] px-5 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#f2efe8] transition-colors hover:bg-[#f2efe8] hover:text-[#11100f]">
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Back to events
           </Link>
-          <h1 className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white to-white/70 py-1 drop-shadow-sm line-clamp-2">{eventTitle}</h1>
-          <p className="text-slate-400 text-xs font-bold tracking-widest border border-white/10 bg-white/5 rounded-md px-3 py-1 w-fit mt-2 uppercase shadow-inner">Session: {id}</p>
-          <ArenaStatsTracker eventId={id} />
         </div>
       </div>
-      
-      <div className="mt-6 flex-1 border border-white/10 rounded-2xl overflow-hidden bg-white/5 flex flex-col w-full shadow-[0_0_50px_rgba(0,0,0,0.5)] relative">
-        {!userId ? (
-          <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-black/40 backdrop-blur-sm relative overflow-hidden">
-             <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[300px] h-[300px] bg-fuchsia-500/10 blur-[100px] rounded-full pointer-events-none"></div>
-             <div className="w-20 h-20 rounded-full bg-fuchsia-500/10 flex items-center justify-center mb-6 border border-fuchsia-500/30 shadow-[0_0_30px_rgba(217,70,239,0.2)] z-10">
-                <span className="text-3xl">🔒</span>
-             </div>
-             <h3 className="text-3xl font-bold text-white mb-3 z-10 tracking-tight">Restricted Arena</h3>
-             <p className="text-slate-400 mb-6 max-w-md text-lg z-10 leading-relaxed text-balance">You must be signed in to your LivePulse account to view messages and engage with other fans.</p>
+    );
+  }
+
+  const startTime = event.start_time ? new Date(event.start_time) : null;
+  const hasValidStartTime = startTime && !Number.isNaN(startTime.getTime());
+
+  return (
+    <div className="mx-auto w-full max-w-[1600px] border-x border-[#45413c]">
+      <div className="grid border-b border-[#45413c] lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="p-5 sm:p-8 lg:p-12">
+          <Link href="/events" className="mb-8 flex w-fit items-center gap-3 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#aaa49b] transition-colors hover:text-[#f2efe8]">
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Event desk
+          </Link>
+          <p className="mb-4 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[#aaa49b]">
+            Event room
+          </p>
+          <h1 className="max-w-6xl font-heading text-[clamp(3.5rem,8vw,8rem)] font-black uppercase leading-[0.92] tracking-[-0.015em] text-[#f2efe8]">{event.title}</h1>
+        </div>
+
+        <aside className="border-t border-[#45413c] bg-[#f2efe8] text-[#11100f] lg:border-t-0 lg:border-l">
+          <div className="border-b border-[#11100f] p-5 sm:p-7">
+            <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.16em] opacity-60">Transmission</span>
+            <p className="mt-2 break-all font-mono text-[11px] font-medium uppercase tracking-[0.08em]">{id}</p>
           </div>
-        ) : (
-          <ChatRoom sessionId={id} />
-        )}
+          <div className="space-y-5 p-5 sm:p-7">
+            <div className="flex gap-3">
+              <CalendarDays className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <div>
+                <span className="block font-mono text-[9px] font-semibold uppercase tracking-[0.14em] opacity-60">On air</span>
+                <span className="mt-1 block text-sm font-medium">{hasValidStartTime ? startTime.toLocaleString(undefined, { weekday: "long", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" }) : "Schedule to be announced"}</span>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <MapPin className="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />
+              <div>
+                <span className="block font-mono text-[9px] font-semibold uppercase tracking-[0.14em] opacity-60">Location</span>
+                <span className="mt-1 block text-sm font-medium">{event.location || "To be announced"}{event.country ? ` / ${event.country}` : ""}</span>
+              </div>
+            </div>
+            {event.type && <p className="border-t border-[#11100f] pt-4 font-mono text-[10px] font-semibold uppercase tracking-[0.14em]">{event.type}</p>}
+          </div>
+        </aside>
+      </div>
+
+      <div className="grid lg:grid-cols-[300px_minmax(0,1fr)]">
+        <aside className="border-b border-[#45413c] p-5 sm:p-8 lg:border-r lg:border-b-0">
+          <p className="font-heading text-3xl font-bold uppercase tracking-[-0.03em] text-[#f2efe8]">Room details</p>
+          <p className="mt-2 text-sm leading-relaxed text-[#aaa49b]">See how many people are connected and save this event for later.</p>
+          <ArenaStatsTracker eventId={id} />
+        </aside>
+
+        <section className="min-h-[620px] bg-[#171614] lg:h-[76vh] lg:min-h-[620px]">
+          {!userId ? (
+            <div className="broadcast-grid grid h-full min-h-[620px] place-items-center p-8 text-center">
+              <div className="max-w-lg border border-[#67625b] bg-[#11100f] p-8 sm:p-12">
+                <LockKeyhole className="mx-auto h-8 w-8 text-[#ed2f24]" aria-hidden="true" />
+                <p className="mt-7 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[#ed2f24]">Authentication required</p>
+                <h2 className="mt-3 font-heading text-5xl font-black uppercase leading-none tracking-[-0.04em] text-[#f2efe8]">This room is restricted</h2>
+                <p className="mt-4 text-sm leading-relaxed text-[#aaa49b]">Sign in to read the live feed and join the conversation with everyone following this event.</p>
+                <Link href="/sign-in" className="mt-8 inline-flex bg-[#ed2f24] px-6 py-4 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#fffaf2] transition-colors hover:bg-[#f2efe8] hover:text-[#11100f]">Sign in to enter</Link>
+              </div>
+            </div>
+          ) : (
+            <ChatRoom sessionId={id} />
+          )}
+        </section>
       </div>
     </div>
   );

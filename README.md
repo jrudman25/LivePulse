@@ -41,7 +41,8 @@ The frontend uses the Next.js 16 App Router with React 19 and TypeScript.
 - Search terms are stored in the `q` URL parameter. Type, country, and favorite filters are applied in client state.
 - Additional event results are requested through a **Load more events** control using an `offset` query parameter.
 - A web app manifest provides install metadata and standalone display settings. The project does not currently include a service worker or offline caching.
-- Tailwind CSS and shadcn-based components provide the interface styling.
+- Tailwind CSS and shadcn-based components provide the broadcast-inspired interface styling.
+- Help & FAQ and Privacy routes document product behavior and the application’s implemented data flows.
 
 ### 5. Authentication and Connection Controls
 

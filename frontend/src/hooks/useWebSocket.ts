@@ -13,7 +13,7 @@ export type ChatMessage = {
 export type WSEvent = 
   | { type: "chat"; message: ChatMessage }
   | { type: "reaction"; user_id: string; reaction_type: string; timestamp: string }
-  | { type: "milestone_achieved"; milestone: any; achieved_at: string }
+  | { type: "milestone_achieved"; milestone: unknown; achieved_at: string }
   | { type: "error"; message: string };
 
 export function useWebSocket(sessionId: string) {
@@ -29,6 +29,7 @@ export function useWebSocket(sessionId: string) {
     
     let isMounted = true;
     let reconnectTimeoutId: NodeJS.Timeout;
+    let errorTimeoutId: NodeJS.Timeout;
 
     const connect = async () => {
       try {
@@ -38,7 +39,7 @@ export function useWebSocket(sessionId: string) {
         // Ensure this points to the external Go server address dynamically
         const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8080";
         // Token strictly removed from URL parameters intrinsically blocking Leakage
-        const url = `${WS_URL}/ws?session_id=${sessionId}`;
+        const url = `${WS_URL}/ws?session_id=${encodeURIComponent(sessionId)}`;
         const ws = new WebSocket(url);
 
         ws.onopen = () => {
@@ -56,7 +57,7 @@ export function useWebSocket(sessionId: string) {
             // Exponential backoff structurally clamped to 30 second maximum ceilings natively
             const delay = Math.min(1000 * Math.pow(2, reconnectAttempt.current), 30000);
             reconnectAttempt.current += 1;
-            console.log(`WebSocket connection dropped gracefully. Attempting retry #${reconnectAttempt.current} natively in ${delay}ms`);
+            console.warn(`WebSocket disconnected. Retrying in ${delay}ms (attempt ${reconnectAttempt.current}).`);
             reconnectTimeoutId = setTimeout(connect, delay);
           }
         };
@@ -72,7 +73,8 @@ export function useWebSocket(sessionId: string) {
             } else if (data.type === "error") {
               // Immediately flag the React toast interface natively
               setErrorMsg(data.message);
-              setTimeout(() => setErrorMsg(null), 5000); // clear gracefully
+              clearTimeout(errorTimeoutId);
+              errorTimeoutId = setTimeout(() => setErrorMsg(null), 5000); // clear gracefully
             }
           } catch (e) {
             console.error("Failed to parse WS message", e);
@@ -90,6 +92,7 @@ export function useWebSocket(sessionId: string) {
     return () => {
       isMounted = false;
       clearTimeout(reconnectTimeoutId); // Clean structurally
+      clearTimeout(errorTimeoutId);
       if (wsRef.current) {
         wsRef.current.close();
       }
