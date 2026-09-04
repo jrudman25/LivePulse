@@ -75,9 +75,6 @@ export default function EventCard({ event, index = 0, onFavoriteToggle }: { even
   };
 
   const startTime = new Date(event.start_time || "");
-  const endTime = new Date(event.end_time || "");
-  const now = new Date();
-  const isLive = !Number.isNaN(startTime.getTime()) && startTime <= now && (!Number.isNaN(endTime.getTime()) ? endTime > now : true);
   const eventNumber = String(index + 1).padStart(2, "0");
 
   return (
@@ -100,7 +97,6 @@ export default function EventCard({ event, index = 0, onFavoriteToggle }: { even
         <div>
           <div className="mb-4 flex flex-wrap items-center gap-3 font-mono text-[9px] font-semibold uppercase tracking-[0.16em]">
             <span className="text-[#aaa49b]">{event.type || "Live event"}</span>
-            {isLive && <span className="flex items-center gap-2 text-[#ed2f24]"><span className="h-2 w-2 animate-pulse bg-[#ed2f24]" />Live now</span>}
           </div>
           <h2 className="max-w-3xl font-heading text-3xl font-bold uppercase leading-[0.95] tracking-[-0.035em] text-[#f2efe8] transition-colors group-hover:text-white sm:text-4xl">{event.title}</h2>
         </div>
