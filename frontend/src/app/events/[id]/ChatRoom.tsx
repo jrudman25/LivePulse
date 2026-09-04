@@ -68,7 +68,7 @@ export default function ChatRoom({ sessionId }: { sessionId: string }) {
           const isMe = msg.user_id === user?.id;
 
           return (
-            <div key={i} className={`grid border-b border-[#302e2a] transition-colors hover:bg-[#1d1b19] sm:grid-cols-[150px_minmax(0,1fr)] ${isMe ? "bg-[#1b1715]" : ""}`}>
+            <div key={msg.id} className={`grid border-b border-[#302e2a] transition-colors hover:bg-[#1d1b19] sm:grid-cols-[150px_minmax(0,1fr)] ${isMe ? "bg-[#1b1715]" : ""}`}>
               <div className="flex items-center justify-between gap-3 border-b border-[#302e2a] px-4 py-3 sm:block sm:border-r sm:border-b-0 sm:px-5 sm:py-4">
                 <span className={`block truncate font-mono text-[10px] font-semibold uppercase tracking-[0.1em] ${isMe ? "text-[#ed2f24]" : "text-[#aaa49b]"}`}>
                   {isMe ? "You" : msg.author_name || `User ${msg.user_id.slice(-5)}`}
@@ -89,7 +89,7 @@ export default function ChatRoom({ sessionId }: { sessionId: string }) {
       <div className="shrink-0 border-t border-[#67625b] bg-[#11100f] p-3 sm:p-4">
         {/* Toast Error Banner */}
         {errorMsg && (
-          <div className="mb-3 flex items-center justify-between border border-[#ed2f24] bg-[#2c1513] px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-[#ff8d86]">
+          <div role="alert" className="mb-3 flex items-center justify-between border border-[#ed2f24] bg-[#2c1513] px-4 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.1em] text-[#ff8d86]">
             <span>{errorMsg}</span>
             <button onClick={clearError} className="p-1 transition-colors hover:text-white" aria-label="Dismiss error"><X className="h-4 w-4" aria-hidden="true" /></button>
           </div>

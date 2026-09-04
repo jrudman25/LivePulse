@@ -21,6 +21,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
 
   let event: EventDetails = { id, title: "Live Session" };
   let isEventFound = true;
+  let eventFetchFailed = false;
   try {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
     const res = await fetch(`${API_URL}/api/events/single?id=${id}`, { cache: "no-store" });
@@ -29,13 +30,31 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       event = { ...event, ...data, title: data.title || "Live Session" };
     } else if (res.status === 404) {
       isEventFound = false;
+    } else {
+      eventFetchFailed = true;
     }
   } catch (e) {
     console.error("Failed to fetch event title:", e);
+    eventFetchFailed = true;
   }
 
   if (!isEventFound) {
     notFound();
+  }
+
+  if (eventFetchFailed) {
+    return (
+      <div className="mx-auto grid min-h-[calc(100vh-72px)] w-full max-w-[1600px] place-items-center border-x border-[#45413c] p-5">
+        <div role="alert" className="w-full max-w-2xl border border-[#ed2f24] bg-[#2c1513] p-8 text-center sm:p-12">
+          <p className="font-heading text-5xl font-bold uppercase tracking-[-0.015em] text-[#f2efe8]">Event unavailable</p>
+          <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#d1cbc1]">This event could not be verified with the API, so its room has not been opened.</p>
+          <Link href="/events" className="mt-7 inline-flex items-center gap-3 border border-[#67625b] px-5 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#f2efe8] transition-colors hover:bg-[#f2efe8] hover:text-[#11100f]">
+            <ArrowLeft className="h-3.5 w-3.5" aria-hidden="true" />
+            Back to events
+          </Link>
+        </div>
+      </div>
+    );
   }
 
   const startTime = event.start_time ? new Date(event.start_time) : null;
@@ -52,7 +71,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
           <p className="mb-4 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[#aaa49b]">
             Event room
           </p>
-          <h1 className="max-w-6xl font-heading text-[clamp(3.5rem,8vw,8rem)] font-black uppercase leading-[0.8] tracking-[-0.05em] text-[#f2efe8]">{event.title}</h1>
+          <h1 className="max-w-6xl font-heading text-[clamp(3.5rem,8vw,8rem)] font-black uppercase leading-[0.92] tracking-[-0.015em] text-[#f2efe8]">{event.title}</h1>
         </div>
 
         <aside className="border-t border-[#45413c] bg-[#f2efe8] text-[#11100f] lg:border-t-0 lg:border-l">

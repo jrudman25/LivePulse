@@ -52,7 +52,7 @@ export default function HelpPage() {
             Home
           </Link>
           <p className="mb-4 font-mono text-[10px] font-semibold uppercase tracking-[0.18em] text-[#aaa49b]">Product guide</p>
-          <h1 className="font-heading text-[clamp(4.5rem,10vw,9rem)] font-black uppercase leading-[0.82] tracking-[-0.05em] text-[#f2efe8]">Help & FAQ</h1>
+          <h1 className="font-heading text-[clamp(4.5rem,10vw,9rem)] font-black uppercase leading-[0.92] tracking-[-0.015em] text-[#f2efe8]">Help & FAQ</h1>
         </div>
         <div className="flex flex-col justify-end border-t border-[#45413c] bg-[#f2efe8] p-5 text-[#11100f] sm:p-8 lg:border-t-0 lg:border-l">
           <p className="font-heading text-4xl font-bold uppercase leading-none tracking-[-0.035em]">Start with an event</p>

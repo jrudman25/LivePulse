@@ -1,8 +1,13 @@
 import EventFeed from "../EventFeed";
+import type { EventItem } from "../EventCard";
 import { auth } from "@clerk/nextjs/server";
 import { LockKeyhole } from "lucide-react";
 
-async function fetchEvents(userId: string | null, q: string) {
+function isEventItem(value: unknown): value is EventItem {
+  return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string" && "title" in value && typeof value.title === "string";
+}
+
+async function fetchEvents(userId: string | null, q: string): Promise<{ events: EventItem[]; failed: boolean }> {
   try {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
     let url = `${API_URL}/api/events`;
@@ -14,13 +19,14 @@ async function fetchEvents(userId: string | null, q: string) {
     if (qs) {url += `?${qs}`;}
 
     const res = await fetch(url, { cache: "no-store" });
-    if (!res.ok) {return [];}
+    if (!res.ok) {return { events: [], failed: true };}
 
-    const data = await res.json();
-    return data || [];
+    const data: unknown = await res.json();
+    if (!Array.isArray(data) || !data.every(isEventItem)) {return { events: [], failed: true };}
+    return { events: data, failed: false };
   } catch (err) {
     console.error("Failed to fetch events from Go backend:", err);
-    return [];
+    return { events: [], failed: true };
   }
 }
 
@@ -29,7 +35,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
   const { userId } = await auth();
 
   const q = typeof resolvedParams.q === "string" ? resolvedParams.q : "";
-  const events = await fetchEvents(userId, q);
+  const { events, failed } = await fetchEvents(userId, q);
 
   return (
     <div className="mx-auto w-full max-w-[1600px] border-x border-[#45413c]">
@@ -39,7 +45,7 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
             <span className="h-2.5 w-2.5 bg-[#ed2f24]" />
             Rolling 24-hour schedule
           </p>
-          <h1 className="font-heading text-[clamp(4.5rem,10vw,9rem)] font-black uppercase leading-[0.8] tracking-[-0.055em] text-[#f2efe8]">Event desk</h1>
+          <h1 className="font-heading text-[clamp(4.5rem,10vw,9rem)] font-black uppercase leading-[0.92] tracking-[-0.015em] text-[#f2efe8]">Event desk</h1>
         </div>
         <div className="flex flex-col justify-end border-t border-[#45413c] bg-[#f2efe8] p-5 text-[#11100f] sm:p-8 lg:border-t-0 lg:border-l">
           <span className="frame-number font-heading text-7xl font-black leading-none tracking-[-0.06em]">{String(events.length).padStart(2, "0")}</span>
@@ -58,11 +64,18 @@ export default async function EventsPage({ searchParams }: { searchParams: Promi
           </div>
         )}
 
-        {events.length === 0 && q === "" ? (
+        {failed ? (
+          <div role="alert" className="grid min-h-[360px] place-items-center border border-[#ed2f24] bg-[#2c1513] p-8 text-center">
+            <div>
+              <p className="font-heading text-5xl font-bold uppercase tracking-[-0.015em] text-[#f2efe8]">Schedule unavailable</p>
+              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#d1cbc1]">Events could not be loaded from the API. Check the backend connection and try again.</p>
+            </div>
+          </div>
+        ) : events.length === 0 && q === "" ? (
           <div className="grid min-h-[360px] place-items-center border border-[#45413c] bg-[#171614] p-8 text-center">
             <div>
-              <p className="font-heading text-5xl font-bold uppercase tracking-[-0.035em] text-[#f2efe8]">The desk is quiet</p>
-              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#aaa49b]">No upcoming events are on the wire yet. The schedule refreshes as new rooms become available.</p>
+              <p className="font-heading text-5xl font-bold uppercase tracking-[-0.015em] text-[#f2efe8]">The desk is quiet</p>
+              <p className="mx-auto mt-3 max-w-md text-sm leading-relaxed text-[#aaa49b]">No upcoming events are available right now.</p>
             </div>
           </div>
         ) : (

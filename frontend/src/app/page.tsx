@@ -20,7 +20,7 @@ export default function LandingPage() {
                 <span className="h-2.5 w-2.5 bg-[#ed2f24]" />
                 Find an event. Join its room.
               </p>
-              <h1 className="reveal-up reveal-delay-2 max-w-5xl font-heading text-[clamp(4.75rem,12vw,11rem)] font-black uppercase leading-[0.88] tracking-[-0.04em] text-[#f2efe8]">
+              <h1 className="reveal-up reveal-delay-2 max-w-5xl font-heading text-[clamp(4.75rem,12vw,11rem)] font-black uppercase leading-[0.94] tracking-[-0.015em] text-[#f2efe8]">
                 <span className="block">Be there.</span>
                 <span className="mt-2 block text-[#ed2f24] sm:mt-3">While it</span>
                 <span className="block">happens.</span>

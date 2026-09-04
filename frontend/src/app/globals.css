@@ -141,6 +141,16 @@
     -webkit-tap-highlight-color: transparent;
   }
 
+  button:not(:disabled),
+  summary {
+    cursor: pointer;
+  }
+
+  :focus-visible {
+    outline: 2px solid #ed2f24 !important;
+    outline-offset: 3px !important;
+  }
+
   ::selection {
     background: #ed2f24;
     color: #fffaf2;

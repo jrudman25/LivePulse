@@ -6,6 +6,10 @@ import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useDebounce } from "use-debounce";
 import EventCard, { type EventItem } from "./EventCard";
 
+function isEventItem(value: unknown): value is EventItem {
+  return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string" && "title" in value && typeof value.title === "string";
+}
+
 export default function EventFeed({ initialEvents }: { initialEvents: EventItem[] }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -22,12 +26,14 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
   const [offset, setOffset] = useState<number>(initialEvents.length);
   const [hasMore, setHasMore] = useState<boolean>(initialEvents.length === 50);
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   // Synchronize dynamic Server Component payloads into local memory when SSR updates
   useEffect(() => {
     setEvents(initialEvents);
     setOffset(initialEvents.length);
     setHasMore(initialEvents.length === 50);
+    setLoadError(null);
   }, [initialEvents]);
 
   const searchParamsString = searchParams.toString();
@@ -53,21 +59,26 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
     setIsLoading(true);
 
     try {
+      setLoadError(null);
       const q = debouncedQuery ? `&q=${encodeURIComponent(debouncedQuery)}` : "";
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
       const res = await fetch(`${API_URL}/api/events?offset=${offset}${q}`);
-      const data = await res.json();
+      if (!res.ok) {throw new Error(`Event request failed with status ${res.status}`);}
 
-      if (!data || data.length < 50) {
+      const data: unknown = await res.json();
+      if (!Array.isArray(data) || !data.every(isEventItem)) {throw new Error("Event request returned an invalid response");}
+
+      if (data.length < 50) {
         setHasMore(false);
       }
 
-      if (data && data.length > 0) {
+      if (data.length > 0) {
         setEvents(prev => [...prev, ...data]);
         setOffset(prev => prev + data.length);
       }
     } catch (e) {
       console.error("Pagination Fetch Error", e);
+      setLoadError("More events could not be loaded. Please try again.");
     } finally {
       setIsLoading(false);
     }
@@ -139,6 +150,10 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
           <button onClick={clearFilters} className="flex items-center gap-2 transition-colors hover:text-[#f2efe8]"><X className="h-3.5 w-3.5" aria-hidden="true" />Clear filters</button>
         )}
       </div>
+
+      {loadError && (
+        <div role="alert" className="mb-4 border border-[#ed2f24] bg-[#2c1513] px-4 py-3 text-sm text-[#ff8d86]">{loadError}</div>
+      )}
 
       {filteredEvents.length === 0 ? (
         <div className="grid min-h-[280px] place-items-center border border-[#45413c] bg-[#171614] p-8 text-center">

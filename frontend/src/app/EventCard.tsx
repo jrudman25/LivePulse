@@ -24,6 +24,10 @@ export default function EventCard({ event, index = 0, onFavoriteToggle }: { even
   const [activeUsers, setActiveUsers] = useState<number | null>(null);
 
   useEffect(() => {
+    setIsFavorite(Boolean(event.is_favorite));
+  }, [event.is_favorite]);
+
+  useEffect(() => {
     // Poll the Go WebSocket Hub for active connected users passively
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
     fetch(`${API_URL}/api/sessions/stats?session_id=${event.id}`)
@@ -100,7 +104,7 @@ export default function EventCard({ event, index = 0, onFavoriteToggle }: { even
           </div>
           <h2 className="max-w-3xl font-heading text-3xl font-bold uppercase leading-[0.95] tracking-[-0.035em] text-[#f2efe8] transition-colors group-hover:text-white sm:text-4xl">{event.title}</h2>
         </div>
-        <Link href={`/events/${event.id}`} className="after:absolute after:inset-0" aria-label={`Open ${event.title}`} />
+        <Link href={`/events/${event.id}`} className="after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:outline-offset-[-3px] focus-visible:after:outline-[#ed2f24]" aria-label={`Open ${event.title}`} />
       </div>
 
       <div className="flex flex-col justify-between border-t border-[#45413c] p-5 md:border-t-0 md:border-l">
