@@ -1,76 +1,26 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Heart, Users } from "lucide-react";
-import { useAuth } from "@clerk/nextjs";
+import { useFavorite } from "@/hooks/useFavorite";
+import type { EventItem } from "@/lib/events";
 
-export type EventItem = {
-  id: string;
-  type?: string;
-  title: string;
-  country?: string;
-  location?: string;
-  start_time?: string;
-  end_time?: string;
-  is_favorite?: boolean;
-};
+export type { EventItem };
 
-// Add optional callback updating parent DOM states cleanly
-export default function EventCard({ event, index = 0, onFavoriteToggle }: { event: EventItem, index?: number, onFavoriteToggle?: (_id: string, _isFav: boolean) => void }) {
-  const [isFavorite, setIsFavorite] = useState(event.is_favorite || false);
-  const { getToken, isSignedIn } = useAuth();
-  const [isLiking, setIsLiking] = useState(false);
-  const [activeUsers, setActiveUsers] = useState<number | null>(null);
+export default function EventCard({ event, index = 0, activeUsers, onFavoriteToggle }: { event: EventItem, index?: number, activeUsers?: number, onFavoriteToggle?: (_id: string, _isFav: boolean) => void }) {
+  const { isFavorite, setIsFavorite, isLiking, notice, toggleFavorite } = useFavorite(event.id, Boolean(event.is_favorite));
 
-  useEffect(() => {
+  const [prevIsFavoriteProp, setPrevIsFavoriteProp] = useState(event.is_favorite);
+  if (event.is_favorite !== prevIsFavoriteProp) {
+    setPrevIsFavoriteProp(event.is_favorite);
     setIsFavorite(Boolean(event.is_favorite));
-  }, [event.is_favorite]);
+  }
 
-  useEffect(() => {
-    // Poll the Go WebSocket Hub for active connected users passively
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-    fetch(`${API_URL}/api/sessions/stats?session_id=${event.id}`)
-      .then(r => r.json())
-      .then(data => {
-        if (data && data.active_user_count !== undefined) {
-          setActiveUsers(data.active_user_count);
-        }
-      })
-      .catch(() => { });
-  }, [event.id]);
-
-  const toggleFavorite = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!isSignedIn) {
-      alert("Please sign in to favorite events!");
-      return;
-    }
-
-    setIsLiking(true);
-    try {
-      const token = await getToken();
-      const method = isFavorite ? "DELETE" : "POST";
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-      const res = await fetch(`${API_URL}/api/favorites`, {
-        method,
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ event_id: event.id })
-      });
-
-      if (res.ok) {
-        setIsFavorite(!isFavorite);
-        if (onFavoriteToggle) {
-          onFavoriteToggle(event.id, !isFavorite);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLiking(false);
+  const handleToggle = async (e: React.MouseEvent) => {
+    const succeeded = await toggleFavorite(e);
+    if (succeeded && onFavoriteToggle) {
+      onFavoriteToggle(event.id, !isFavorite);
     }
   };
 
@@ -99,6 +49,7 @@ export default function EventCard({ event, index = 0, onFavoriteToggle }: { even
             <span className="text-[#aaa49b]">{event.type || "Live event"}</span>
           </div>
           <h2 className="max-w-3xl font-heading text-3xl font-bold uppercase leading-[0.95] tracking-[-0.035em] text-[#f2efe8] transition-colors group-hover:text-white sm:text-4xl">{event.title}</h2>
+          {notice && <p role="status" className="mt-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#ed2f24]">{notice}</p>}
         </div>
         <Link href={`/events/${event.id}`} className="after:absolute after:inset-0 focus-visible:after:outline-2 focus-visible:after:outline-offset-[-3px] focus-visible:after:outline-[#ed2f24]" aria-label={`Open ${event.title}`} />
       </div>
@@ -109,7 +60,7 @@ export default function EventCard({ event, index = 0, onFavoriteToggle }: { even
           <p className="mt-2 text-sm leading-snug text-[#d1cbc1]">{event.location || "Location to be announced"}</p>
           {event.country && <p className="mt-1 font-mono text-[10px] uppercase tracking-[0.12em] text-[#67625b]">{event.country}</p>}
         </div>
-        {activeUsers !== null && (
+        {typeof activeUsers === "number" && activeUsers > 0 && (
           <div className="mt-5 flex items-center gap-2 font-mono text-[10px] uppercase tracking-[0.1em] text-[#aaa49b]">
             <Users className="h-3.5 w-3.5" aria-hidden="true" />
             {activeUsers} in room
@@ -118,7 +69,7 @@ export default function EventCard({ event, index = 0, onFavoriteToggle }: { even
       </div>
 
       <div className="relative z-10 flex items-center justify-between border-t border-[#45413c] px-4 py-3 md:flex-col md:border-t-0 md:border-l md:px-0 md:py-5">
-        <button onClick={toggleFavorite} disabled={isLiking} className={`grid h-10 w-10 place-items-center border transition-colors ${isFavorite ? "border-[#ed2f24] bg-[#ed2f24] text-[#fffaf2]" : "border-[#45413c] text-[#aaa49b] hover:border-[#f2efe8] hover:text-[#f2efe8]"}`} aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}>
+        <button onClick={handleToggle} disabled={isLiking} className={`grid h-10 w-10 place-items-center border transition-colors ${isFavorite ? "border-[#ed2f24] bg-[#ed2f24] text-[#fffaf2]" : "border-[#45413c] text-[#aaa49b] hover:border-[#f2efe8] hover:text-[#f2efe8]"}`} aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}>
           <Heart className="h-4 w-4" fill={isFavorite ? "currentColor" : "none"} aria-hidden="true" />
         </button>
         <ArrowUpRight className="h-5 w-5 text-[#67625b] transition-all group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:text-[#f2efe8]" aria-hidden="true" />

@@ -113,27 +113,27 @@ func TestClassificationFilter(t *testing.T) {
 // TestLocationStringBuilding verifies venue → location string formatting
 func TestLocationStringBuilding(t *testing.T) {
 	tests := []struct {
-		name       string
-		venue      TMEvent
-		wantLoc    string
+		name        string
+		venue       TMEvent
+		wantLoc     string
 		wantCountry string
 	}{
 		{
-			name:       "full venue info",
-			venue:      tmEventWithVenue("Madison Square Garden", "New York", "NY", "US"),
-			wantLoc:    "Madison Square Garden (New York, NY)",
+			name:        "full venue info",
+			venue:       tmEventWithVenue("Madison Square Garden", "New York", "NY", "US"),
+			wantLoc:     "Madison Square Garden (New York, NY)",
 			wantCountry: "US",
 		},
 		{
-			name:       "venue name only, no city/state",
-			venue:      tmEventWithVenue("The O2 Arena", "", "", "GB"),
-			wantLoc:    "The O2 Arena",
+			name:        "venue name only, no city/state",
+			venue:       tmEventWithVenue("The O2 Arena", "", "", "GB"),
+			wantLoc:     "The O2 Arena",
 			wantCountry: "GB",
 		},
 		{
-			name:       "no venue at all",
-			venue:      TMEvent{},
-			wantLoc:    "TBA",
+			name:        "no venue at all",
+			venue:       TMEvent{},
+			wantLoc:     "TBA",
 			wantCountry: "US",
 		},
 	}

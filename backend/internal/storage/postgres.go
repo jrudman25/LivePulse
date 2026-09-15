@@ -23,15 +23,15 @@ type User struct {
 // Event represents a scheduled live event
 type Event struct {
 	ID            string    `json:"id"`
-	Type          string    `json:"type"`            // e.g., "concert", "sports"
-	Title         string    `json:"title"`           // User friendly name
+	Type          string    `json:"type"`  // e.g., "concert", "sports"
+	Title         string    `json:"title"` // User friendly name
 	Location      string    `json:"location"`
 	Country       string    `json:"country"`
 	StartTime     time.Time `json:"start_time"`
 	EndTime       time.Time `json:"end_time"`
 	ExternalAPIID string    `json:"external_api_id"` // ID from Ticketmaster/SeatGeek
 	CreatedAt     time.Time `json:"created_at"`
-	IsFavorite    bool      `json:"is_favorite"`     // Dynamic append flag for client payload
+	IsFavorite    bool      `json:"is_favorite"` // Dynamic append flag for client payload
 }
 
 // Favorite represents a user's bookmarked event
@@ -92,6 +92,8 @@ func (db *PostgresClient) InitSchema(ctx context.Context) error {
 
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS location VARCHAR(255);
 	ALTER TABLE events ADD COLUMN IF NOT EXISTS country VARCHAR(10);
+
+	CREATE INDEX IF NOT EXISTS idx_events_start_time ON events (start_time);
 	`
 	_, err := db.pool.Exec(ctx, queries)
 	return err
@@ -111,6 +113,11 @@ func (db *PostgresClient) InsertEvent(ctx context.Context, e Event) error {
 	`
 	_, err := db.pool.Exec(ctx, query, e.ID, e.Type, e.Title, e.Location, e.Country, e.StartTime, e.EndTime, e.ExternalAPIID, e.CreatedAt)
 	return err
+}
+
+// Ping verifies database connectivity for readiness checks
+func (db *PostgresClient) Ping(ctx context.Context) error {
+	return db.pool.Ping(ctx)
 }
 
 // Close gracefully closes the database pool
@@ -158,9 +165,16 @@ func (db *PostgresClient) GetUpcomingEvents(ctx context.Context, limit int, offs
 		if err := rows.Scan(&e.ID, &e.Type, &e.Title, &loc, &country, &e.StartTime, &e.EndTime, &e.ExternalAPIID, &e.CreatedAt); err != nil {
 			return nil, err
 		}
-		if loc != nil { e.Location = *loc }
-		if country != nil { e.Country = *country }
+		if loc != nil {
+			e.Location = *loc
+		}
+		if country != nil {
+			e.Country = *country
+		}
 		events = append(events, e)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return events, nil
 }
@@ -175,8 +189,12 @@ func (db *PostgresClient) GetEvent(ctx context.Context, id string) (*Event, erro
 	if err != nil {
 		return nil, err
 	}
-	if loc != nil { e.Location = *loc }
-	if country != nil { e.Country = *country }
+	if loc != nil {
+		e.Location = *loc
+	}
+	if country != nil {
+		e.Country = *country
+	}
 	return &e, nil
 }
 
@@ -189,7 +207,9 @@ func (db *PostgresClient) AddFavorite(ctx context.Context, userID, eventID strin
 	`
 	// Upsert the user into the database as a reference since Clerk handles auth natively
 	upsertUser := `INSERT INTO users (id) VALUES ($1) ON CONFLICT (id) DO NOTHING`
-	_, _ = db.pool.Exec(ctx, upsertUser, userID)
+	if _, err := db.pool.Exec(ctx, upsertUser, userID); err != nil {
+		return fmt.Errorf("failed to upsert user: %w", err)
+	}
 
 	_, err := db.pool.Exec(ctx, query, userID, eventID)
 	return err
@@ -220,6 +240,9 @@ func (db *PostgresClient) GetUserFavorites(ctx context.Context, userID string) (
 			return nil, err
 		}
 		eventIDs = append(eventIDs, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 	return eventIDs, nil
 }

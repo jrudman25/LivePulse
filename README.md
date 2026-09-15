@@ -20,9 +20,9 @@ The session hubs and aggregation state are local to a single backend process. Th
 
 ### 2. Redis Chat Storage
 
-The backend stores chat messages in Redis lists using `RPUSH` and retains at most 500 messages per session with `LTRIM`.
+The backend stores chat messages in Redis lists using `RPUSH` and retains at most 500 messages per session with `LTRIM`; both run in a transaction pipeline.
 
-A `SetChatTTL` method is available to schedule deletion one hour after an event's end time, but it is not currently called by the server. Chat keys therefore do not receive an expiration time through the current runtime path.
+Each chat key is scheduled for deletion one hour after the event's end time via `SetChatTTL`. When a client authenticates over WebSocket, the server replays the last 100 persisted messages so new joiners can follow the conversation.
 
 ### 3. PostgreSQL and Ticketmaster Data
 
@@ -48,11 +48,14 @@ The frontend uses the Next.js 16 App Router with React 19 and TypeScript.
 
 Clerk provides frontend authentication and JWT verification in the Go backend.
 
-- After opening a WebSocket, the client sends an `authenticate` message containing its Clerk token. The server registers the client with the session only after verifying that token.
+- After opening a WebSocket, the client sends an `authenticate` message containing its Clerk token. The server registers the client with the session only after verifying that token, and closes connections that do not authenticate within 15 seconds.
 - Sending the token in the first WebSocket message keeps it out of the connection URL. Transport encryption depends on using `wss://` in deployment.
-- The WebSocket upgrader accepts requests from `http://localhost:3000`, `https://livepulse-hq.vercel.app`, and clients that omit the `Origin` header.
-- The client reconnects after a closed connection using exponential backoff capped at 30 seconds.
-- The favorites API requires a Clerk bearer token. Event listing and several session endpoints are currently public.
+- The WebSocket upgrader accepts origins from `WS_ALLOWED_ORIGINS` (comma-separated). When unset it falls back to `http://localhost:3000`, `https://livepulse-hq.vercel.app`, and clients that omit the `Origin` header.
+- The client reconnects after a closed connection using exponential backoff capped at 30 seconds, up to 6 attempts before surfacing a manual reconnect control.
+- The favorites API and session create/join endpoints require a Clerk bearer token. Event listing is public but accepts an optional token to decorate results with the caller's favorites.
+- HTTP CORS follows `CORS_ALLOWED_ORIGINS`; when unset it allows all origins for local development. `GET /health` is a liveness check and `GET /health/ready` pings PostgreSQL and Redis for readiness probes.
+- `POST /api/admin/trigger-fetch` triggers a manual Ticketmaster ingestion. It accepts `POST` only, is throttled to one trigger per minute, requires `X-Admin-Key` when `ADMIN_API_KEY` is configured, and never overlaps an in-progress run.
+- Setting `APP_ENV=production` makes startup fail fast unless `CLERK_SECRET_KEY`, `EXTERNAL_API_KEY`, a TLS `DATABASE_URL`, a `rediss://` `REDIS_URL`, and both origin allowlists are configured.
 
 ---
 

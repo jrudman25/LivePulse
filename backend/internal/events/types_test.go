@@ -1,8 +1,8 @@
 package events
 
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestChatEventCreationAndExtraction(t *testing.T) {
@@ -22,7 +22,7 @@ func TestChatEventCreationAndExtraction(t *testing.T) {
 
 	// 2. Data Extraction mapping checks
 	extText, extAuthor, ok := event.GetChatText()
-	
+
 	assert.True(t, ok, "Extraction should successfully locate payload parameters")
 	assert.Equal(t, text, extText)
 	assert.Equal(t, authorName, extAuthor)

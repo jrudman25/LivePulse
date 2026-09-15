@@ -6,11 +6,38 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"time"
+	"os"
 )
+
+// postWithAuth sends an authenticated POST; session create/join now require
+// a verified Clerk bearer token (LIVEPULSE_WS_TOKEN or CLERK_JWT).
+func postWithAuth(url, token string, body []byte) (*http.Response, error) {
+	var reader *bytes.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	} else {
+		reader = bytes.NewReader(nil)
+	}
+	req, err := http.NewRequest(http.MethodPost, url, reader)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	return http.DefaultClient.Do(req)
+}
 
 func main() {
 	baseURL := "http://localhost:8080"
+	token := os.Getenv("LIVEPULSE_WS_TOKEN")
+	if token == "" {
+		token = os.Getenv("CLERK_JWT")
+	}
+	if token == "" {
+		log.Println("WARNING: no Clerk token set (LIVEPULSE_WS_TOKEN or CLERK_JWT); session endpoints require auth")
+	}
 
 	// 1. Create a session
 	fmt.Println("Creating session...")
@@ -20,30 +47,29 @@ func main() {
 	}
 
 	reqBody, _ := json.Marshal(sessionReq)
-	resp, err := http.Post(baseURL+"/api/sessions", "application/json", bytes.NewBuffer(reqBody))
+	resp, err := postWithAuth(baseURL+"/api/sessions", token, reqBody)
 	if err != nil {
 		log.Fatalf("Failed to create session: %v", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		log.Fatalf("Session creation failed with status %s", resp.Status)
+	}
 
 	var sessionResp map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&sessionResp)
 	sessionID := sessionResp["session_id"].(string)
 	fmt.Printf("Session created: %s\n\n", sessionID)
 
-	// 2. Simulate multiple users joining
-	fmt.Println("Simulating users joining...")
-	for i := 1; i <= 10; i++ {
-		userID := fmt.Sprintf("user%d", i)
-		url := fmt.Sprintf("%s/api/sessions/join?session_id=%s&user_id=%s", baseURL, sessionID, userID)
-		resp, err := http.Post(url, "application/json", nil)
-		if err != nil {
-			log.Printf("Failed to join user %s: %v", userID, err)
-			continue
-		}
+	// 2. Join the session (identity comes from the verified token subject)
+	fmt.Println("Joining session...")
+	url := fmt.Sprintf("%s/api/sessions/join?session_id=%s", baseURL, sessionID)
+	resp, err = postWithAuth(url, token, nil)
+	if err != nil {
+		log.Printf("Failed to join session: %v", err)
+	} else {
 		resp.Body.Close()
-		fmt.Printf("  ✓ %s joined\n", userID)
-		time.Sleep(100 * time.Millisecond)
+		fmt.Printf("  join status: %s\n", resp.Status)
 	}
 	fmt.Println()
 

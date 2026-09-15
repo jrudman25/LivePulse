@@ -10,23 +10,23 @@ import (
 
 // SessionStats holds real-time statistics for a session
 type SessionStats struct {
-	SessionID         string
-	ActiveUsers       map[string]int // UserID -> active socket connection count
-	ReactionCounts    map[events.ReactionType]*int64
-	TotalReactions    *int64
+	SessionID           string
+	ActiveUsers         map[string]int // UserID -> active socket connection count
+	ReactionCounts      map[events.ReactionType]*int64
+	TotalReactions      *int64
 	PeakConcurrentUsers int
-	StartTime         time.Time
-	LastActivity      time.Time
-	mu                sync.RWMutex
+	StartTime           time.Time
+	LastActivity        time.Time
+	mu                  sync.RWMutex
 }
 
 // NewSessionStats creates a new session statistics tracker
 func NewSessionStats(sessionID string) *SessionStats {
 	totalReactions := int64(0)
-	
+
 	return &SessionStats{
-		SessionID:      sessionID,
-		ActiveUsers:    make(map[string]int),
+		SessionID:   sessionID,
+		ActiveUsers: make(map[string]int),
 		ReactionCounts: map[events.ReactionType]*int64{
 			events.ReactionLike:     new(int64),
 			events.ReactionLove:     new(int64),
@@ -49,12 +49,12 @@ func (s *SessionStats) AddUser(userID string) int {
 
 	s.ActiveUsers[userID]++
 	s.LastActivity = time.Now().UTC()
-	
+
 	currentCount := len(s.ActiveUsers)
 	if currentCount > s.PeakConcurrentUsers {
 		s.PeakConcurrentUsers = currentCount
 	}
-	
+
 	return currentCount
 }
 
@@ -68,9 +68,9 @@ func (s *SessionStats) RemoveUser(userID string) int {
 	} else {
 		delete(s.ActiveUsers, userID)
 	}
-	
+
 	s.LastActivity = time.Now().UTC()
-	
+
 	return len(s.ActiveUsers)
 }
 
@@ -134,14 +134,14 @@ func (s *SessionStats) GetAllReactionCounts() map[events.ReactionType]int64 {
 
 // Snapshot returns a complete snapshot of the session statistics
 type StatsSnapshot struct {
-	SessionID           string                       `json:"session_id"`
-	ActiveUserCount     int                          `json:"active_user_count"`
-	PeakConcurrentUsers int                          `json:"peak_concurrent_users"`
-	TotalReactions      int64                        `json:"total_reactions"`
+	SessionID           string                        `json:"session_id"`
+	ActiveUserCount     int                           `json:"active_user_count"`
+	PeakConcurrentUsers int                           `json:"peak_concurrent_users"`
+	TotalReactions      int64                         `json:"total_reactions"`
 	ReactionCounts      map[events.ReactionType]int64 `json:"reaction_counts"`
-	StartTime           time.Time                    `json:"start_time"`
-	LastActivity        time.Time                    `json:"last_activity"`
-	Duration            float64                      `json:"duration_seconds"`
+	StartTime           time.Time                     `json:"start_time"`
+	LastActivity        time.Time                     `json:"last_activity"`
+	Duration            float64                       `json:"duration_seconds"`
 }
 
 // GetSnapshot returns a snapshot of the current statistics
@@ -149,12 +149,20 @@ func (s *SessionStats) GetSnapshot() StatsSnapshot {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
+	// Copy reaction counts inside the single lock scope; calling
+	// GetAllReactionCounts here would re-acquire RLock and can deadlock
+	// behind a queued writer.
+	counts := make(map[events.ReactionType]int64, len(s.ReactionCounts))
+	for reactionType, counter := range s.ReactionCounts {
+		counts[reactionType] = atomic.LoadInt64(counter)
+	}
+
 	return StatsSnapshot{
 		SessionID:           s.SessionID,
 		ActiveUserCount:     len(s.ActiveUsers),
 		PeakConcurrentUsers: s.PeakConcurrentUsers,
 		TotalReactions:      atomic.LoadInt64(s.TotalReactions),
-		ReactionCounts:      s.GetAllReactionCounts(),
+		ReactionCounts:      counts,
 		StartTime:           s.StartTime,
 		LastActivity:        s.LastActivity,
 		Duration:            time.Since(s.StartTime).Seconds(),

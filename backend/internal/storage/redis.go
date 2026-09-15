@@ -46,21 +46,20 @@ func NewRedisClient(url string) (*RedisClient, error) {
 // SaveChatMessage adds a message to the event's chat list and ensures a TTL is set
 func (rc *RedisClient) SaveChatMessage(ctx context.Context, sessionID string, msg *ChatMessage) error {
 	key := fmt.Sprintf("chat:%s", sessionID)
-	
+
 	data, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
 
-	// Add message to the end of the list
-	if err := rc.client.RPush(ctx, key, data).Err(); err != nil {
-		return err
-	}
-
-	// Optional: Limit chat history to last 500 messages per session to save memory
-	rc.client.LTrim(ctx, key, -500, -1)
-
-	return nil
+	// Add message and enforce the 500-message retention cap atomically;
+	// a failed LTRIM must surface as an error rather than silently
+	// letting the list grow past the documented limit.
+	pipe := rc.client.TxPipeline()
+	pipe.RPush(ctx, key, data)
+	pipe.LTrim(ctx, key, -500, -1)
+	_, err = pipe.Exec(ctx)
+	return err
 }
 
 // GetRecentChat fetches the chat history for an event
@@ -89,9 +88,14 @@ func (rc *RedisClient) SetChatTTL(ctx context.Context, sessionID string, expireA
 	key := fmt.Sprintf("chat:%s", sessionID)
 	// We add 1 hour to the event's end time per the feature requirements
 	deletionTime := expireAt.Add(1 * time.Hour)
-	
+
 	// ExpireAt explicitly schedules the key for deletion at a specific time
 	return rc.client.ExpireAt(ctx, key, deletionTime).Err()
+}
+
+// Ping verifies Redis connectivity for readiness checks
+func (rc *RedisClient) Ping(ctx context.Context) error {
+	return rc.client.Ping(ctx).Err()
 }
 
 // Close gracefully closes the redis client

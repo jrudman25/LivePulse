@@ -81,7 +81,7 @@ func (e *Event) GetReactionType() (ReactionType, bool) {
 // ChatEvent creates a chat event
 func ChatEvent(sessionID, userID string, text string, authorName string) *Event {
 	return NewEvent(EventTypeChat, sessionID, userID, map[string]interface{}{
-		"text": text,
+		"text":        text,
 		"author_name": authorName,
 	})
 }

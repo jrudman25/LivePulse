@@ -2,13 +2,14 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useDebounce } from "use-debounce";
-import EventCard, { type EventItem } from "./EventCard";
+import EventCard from "./EventCard";
+import { isEventList, type EventItem } from "@/lib/events";
 
-function isEventItem(value: unknown): value is EventItem {
-  return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string" && "title" in value && typeof value.title === "string";
-}
+// Matches the LIMIT the Go backend applies in HandleGetLiveEvents
+const EVENT_PAGE_SIZE = 200;
 
 export default function EventFeed({ initialEvents }: { initialEvents: EventItem[] }) {
   const router = useRouter();
@@ -24,17 +25,23 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
   // Pagination State mappings natively decoupled from Server Component
   const [events, setEvents] = useState<EventItem[]>(initialEvents);
   const [offset, setOffset] = useState<number>(initialEvents.length);
-  const [hasMore, setHasMore] = useState<boolean>(initialEvents.length === 50);
+  const [hasMore, setHasMore] = useState<boolean>(initialEvents.length === EVENT_PAGE_SIZE);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [roomCounts, setRoomCounts] = useState<Record<string, number>>({});
+  const { getToken, isSignedIn } = useAuth();
 
-  // Synchronize dynamic Server Component payloads into local memory when SSR updates
-  useEffect(() => {
+  // Reset paginated state when the server payload changes (new search, refresh),
+  // while preserving appended pages when the same events refetch unchanged.
+  const eventsSignature = initialEvents.map(e => `${e.id}${e.is_favorite ? "f" : ""}`).join("|");
+  const [prevSignature, setPrevSignature] = useState(eventsSignature);
+  if (prevSignature !== eventsSignature) {
+    setPrevSignature(eventsSignature);
     setEvents(initialEvents);
     setOffset(initialEvents.length);
-    setHasMore(initialEvents.length === 50);
+    setHasMore(initialEvents.length === EVENT_PAGE_SIZE);
     setLoadError(null);
-  }, [initialEvents]);
+  }
 
   const searchParamsString = searchParams.toString();
 
@@ -54,6 +61,35 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
     }
   }, [debouncedQuery, pathname, router, searchParamsString]);
 
+  // Fetch room counts for all loaded events in one batched request
+  const eventIdsKey = events.map(e => e.id).join(",");
+  useEffect(() => {
+    if (!eventIdsKey) {return;}
+    const ids = eventIdsKey.split(",").map(encodeURIComponent).join(",");
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    const controller = new AbortController();
+    fetch(`${API_URL}/api/sessions/stats?session_ids=${ids}`, { signal: controller.signal })
+      .then(r => (r.ok ? r.json() : null))
+      .then((data: unknown) => {
+        if (data && typeof data === "object" && !Array.isArray(data)) {
+          const counts = data as Record<string, unknown>;
+          setRoomCounts(prev => {
+            let changed = false;
+            const next = { ...prev };
+            for (const [id, count] of Object.entries(counts)) {
+              if (typeof count === "number" && next[id] !== count) {
+                next[id] = count;
+                changed = true;
+              }
+            }
+            return changed ? next : prev;
+          });
+        }
+      })
+      .catch(() => { });
+    return () => controller.abort();
+  }, [eventIdsKey]);
+
   const loadMoreEvents = async () => {
     if (isLoading || !hasMore) {return;}
     setIsLoading(true);
@@ -62,18 +98,27 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
       setLoadError(null);
       const q = debouncedQuery ? `&q=${encodeURIComponent(debouncedQuery)}` : "";
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-      const res = await fetch(`${API_URL}/api/events?offset=${offset}${q}`);
+      // Send the Clerk token so later pages keep favorite decoration.
+      const headers: Record<string, string> = {};
+      if (isSignedIn) {
+        const token = await getToken();
+        if (token) {headers["Authorization"] = `Bearer ${token}`;}
+      }
+      const res = await fetch(`${API_URL}/api/events?offset=${offset}${q}`, { headers, signal: AbortSignal.timeout(8000) });
       if (!res.ok) {throw new Error(`Event request failed with status ${res.status}`);}
 
       const data: unknown = await res.json();
-      if (!Array.isArray(data) || !data.every(isEventItem)) {throw new Error("Event request returned an invalid response");}
+      if (!isEventList(data)) {throw new Error("Event request returned an invalid response");}
 
-      if (data.length < 50) {
+      if (data.length < EVENT_PAGE_SIZE) {
         setHasMore(false);
       }
 
       if (data.length > 0) {
-        setEvents(prev => [...prev, ...data]);
+        setEvents(prev => {
+          const seen = new Set(prev.map(e => e.id));
+          return [...prev, ...data.filter(d => !seen.has(d.id))];
+        });
         setOffset(prev => prev + data.length);
       }
     } catch (e) {
@@ -124,19 +169,19 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
           </label>
           <label className="grid grid-cols-[1fr_auto] items-center border-b border-[#45413c] px-4 lg:border-r lg:border-b-0">
             <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#67625b]">Type</span>
-            <select className="h-14 max-w-[120px] bg-transparent text-right text-sm font-medium text-[#f2efe8] focus:outline-none" value={filterType} onChange={e => setFilterType(e.target.value)}>
+            <select aria-label="Filter by event type" className="h-14 max-w-[120px] bg-transparent text-right text-sm font-medium text-[#f2efe8] focus:outline-none" value={filterType} onChange={e => setFilterType(e.target.value)}>
               {types.map(t => <option key={t as string} value={t as string} className="bg-[#171614]">{t as string}</option>)}
             </select>
           </label>
           <label className="grid grid-cols-[1fr_auto] items-center border-b border-[#45413c] px-4 lg:border-r lg:border-b-0">
             <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#67625b]">Region</span>
-            <select className="h-14 max-w-[140px] bg-transparent text-right text-sm font-medium text-[#f2efe8] focus:outline-none" value={filterCountry} onChange={e => setFilterCountry(e.target.value)}>
+            <select aria-label="Filter by country" className="h-14 max-w-[140px] bg-transparent text-right text-sm font-medium text-[#f2efe8] focus:outline-none" value={filterCountry} onChange={e => setFilterCountry(e.target.value)}>
               {countries.map(c => <option key={c as string} value={c as string} className="bg-[#171614]">{c === "All" ? "All Countries" : c as string}</option>)}
             </select>
           </label>
           <label className="grid grid-cols-[1fr_auto] items-center px-4">
             <span className="font-mono text-[9px] font-semibold uppercase tracking-[0.14em] text-[#67625b]">Saved</span>
-            <select className="h-14 max-w-[140px] bg-transparent text-right text-sm font-medium text-[#f2efe8] focus:outline-none" value={filterFavorites} onChange={e => setFilterFavorites(e.target.value)}>
+            <select aria-label="Filter by saved events" className="h-14 max-w-[140px] bg-transparent text-right text-sm font-medium text-[#f2efe8] focus:outline-none" value={filterFavorites} onChange={e => setFilterFavorites(e.target.value)}>
               <option value="All" className="bg-[#171614]">All Events</option>
               <option value="Favorites" className="bg-[#171614]">Favorites Only</option>
             </select>
@@ -167,7 +212,7 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
         <>
           <div className="border-t border-[#45413c]">
             {filteredEvents.map((event, index) => (
-              <EventCard key={event.id} event={event} index={index} onFavoriteToggle={handleFavoriteUpdate} />
+              <EventCard key={event.id} event={event} index={index} activeUsers={roomCounts[event.id]} onFavoriteToggle={handleFavoriteUpdate} />
             ))}
           </div>
 

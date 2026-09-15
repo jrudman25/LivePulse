@@ -1,6 +1,7 @@
 package aggregation
 
 import (
+	"fmt"
 	"sync"
 	"testing"
 
@@ -99,5 +100,58 @@ func TestSessionStats_Reactions(t *testing.T) {
 
 	if total := stats.GetTotalReactions(); total != 3 {
 		t.Errorf("Expected 3 total reactions legally collected, got %d", total)
+	}
+}
+
+// TestSessionStats_GetSnapshotConcurrent exercises the snapshot path while
+// writers contend for the lock. GetSnapshot must not re-acquire RLock
+// internally: a queued writer between the two read locks would deadlock.
+// Run with -race.
+func TestSessionStats_GetSnapshotConcurrent(t *testing.T) {
+	stats := NewSessionStats("test-session-snapshot")
+
+	var writers sync.WaitGroup
+	done := make(chan struct{})
+	var readers sync.WaitGroup
+
+	// Writers: keep the lock contended so a writer is usually queued.
+	for i := 0; i < 8; i++ {
+		writers.Add(1)
+		go func(i int) {
+			defer writers.Done()
+			user := fmt.Sprintf("user-%d", i)
+			for j := 0; j < 200; j++ {
+				stats.AddUser(user)
+				stats.IncrementReaction(events.ReactionFire)
+				stats.RemoveUser(user)
+			}
+		}(i)
+	}
+
+	// Readers hammer GetSnapshot until writers finish.
+	for i := 0; i < 8; i++ {
+		readers.Add(1)
+		go func() {
+			defer readers.Done()
+			for {
+				select {
+				case <-done:
+					return
+				default:
+					snap := stats.GetSnapshot()
+					_ = snap.ReactionCounts[events.ReactionFire]
+					_ = stats.GetAllReactionCounts()
+				}
+			}
+		}()
+	}
+
+	writers.Wait()
+	close(done)
+	readers.Wait()
+
+	snap := stats.GetSnapshot()
+	if snap.ReactionCounts[events.ReactionFire] != int64(8*200) {
+		t.Errorf("Expected %d fire reactions, got %d", 8*200, snap.ReactionCounts[events.ReactionFire])
 	}
 }

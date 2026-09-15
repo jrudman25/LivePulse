@@ -9,7 +9,7 @@ export default function ChatRoom({ sessionId }: { sessionId: string }) {
   const { user } = useUser();
   const [inputBox, setInputBox] = useState("");
   const endOfMessagesRef = useRef<HTMLDivElement>(null);
-  const { messages, isConnected, sendMessage, errorMsg, clearError } =
+  const { messages, isConnected, isAuthenticated, hasFailed, retry, sendMessage, errorMsg, clearError } =
     useWebSocket(sessionId);
 
   const maxChars = 500;
@@ -38,23 +38,36 @@ export default function ChatRoom({ sessionId }: { sessionId: string }) {
     <div className="flex h-full min-h-[620px] flex-col">
       <div className="flex h-14 shrink-0 items-center justify-between border-b border-[#45413c] px-4 sm:px-6">
         <div className="flex items-center gap-3 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#f2efe8]">
-          <span className={`h-2 w-2 ${isConnected ? "animate-pulse bg-[#ed2f24]" : "bg-[#67625b]"}`} />
-          {isConnected ? "Connected" : "Connecting"}
+          <span className={`h-2 w-2 ${isAuthenticated ? "animate-pulse bg-[#ed2f24]" : "bg-[#67625b]"}`} />
+          {hasFailed ? "Offline" : isAuthenticated ? "Connected" : isConnected ? "Authenticating" : "Connecting"}
+          {hasFailed && (
+            <button onClick={retry} className="border border-[#67625b] px-3 py-1.5 transition-colors hover:bg-[#f2efe8] hover:text-[#11100f]">Reconnect</button>
+          )}
         </div>
         <span className="frame-number font-mono text-[9px] uppercase tracking-[0.12em] text-[#67625b]">{messages.length} messages / {sessionId.slice(0, 8)}</span>
       </div>
 
       {/* Messages Feed */}
       <div className="flex-1 overflow-y-auto scroll-smooth">
-        {!isConnected && (
+        {!isAuthenticated && !hasFailed && (
           <div className="grid h-full min-h-[400px] place-items-center">
             <div className="border border-[#45413c] px-6 py-4 font-mono text-[10px] font-semibold uppercase tracking-[0.16em] text-[#aaa49b]">
-              Connecting to the room
+              {isConnected ? "Authenticating the connection" : "Connecting to the room"}
             </div>
           </div>
         )}
 
-        {isConnected && messages.length === 0 && (
+        {hasFailed && (
+          <div className="grid h-full min-h-[400px] place-items-center p-8 text-center">
+            <div>
+              <p className="font-heading text-4xl font-bold uppercase tracking-[-0.03em] text-[#f2efe8]">Connection lost</p>
+              <p className="mt-2 text-sm text-[#aaa49b]">The room could not be reached. Check your connection and try again.</p>
+              <button onClick={retry} className="mt-6 border border-[#67625b] px-5 py-3 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#f2efe8] transition-colors hover:bg-[#f2efe8] hover:text-[#11100f]">Reconnect</button>
+            </div>
+          </div>
+        )}
+
+        {isAuthenticated && messages.length === 0 && (
           <div className="grid h-full min-h-[400px] place-items-center p-8 text-center">
             <div>
               <p className="font-heading text-4xl font-bold uppercase tracking-[-0.03em] text-[#f2efe8]">You are on the wire</p>
@@ -100,11 +113,12 @@ export default function ChatRoom({ sessionId }: { sessionId: string }) {
             type="text"
             value={inputBox}
             onChange={(e) => setInputBox(e.target.value)}
-            disabled={!isConnected}
-            placeholder={isConnected ? "Write to the room" : "Waiting to connect"}
+            disabled={!isAuthenticated}
+            aria-label="Write a message"
+            placeholder={isAuthenticated ? "Write to the room" : "Waiting to connect"}
             className={`min-w-0 bg-transparent px-4 py-4 text-sm text-[#f2efe8] placeholder:text-[#67625b] focus:outline-none disabled:opacity-50 sm:px-5 ${isOverLimit ? "text-[#ff8d86]" : ""}`}
           />
-          <button type="submit" disabled={!inputBox.trim() || !isConnected || isOverLimit} className="flex items-center gap-3 bg-[#ed2f24] px-4 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#fffaf2] transition-colors hover:bg-[#f2efe8] hover:text-[#11100f] disabled:cursor-not-allowed disabled:bg-[#302e2a] disabled:text-[#67625b] sm:px-6">
+          <button type="submit" disabled={!inputBox.trim() || !isAuthenticated || isOverLimit} className="flex items-center gap-3 bg-[#ed2f24] px-4 font-mono text-[10px] font-semibold uppercase tracking-[0.14em] text-[#fffaf2] transition-colors hover:bg-[#f2efe8] hover:text-[#11100f] disabled:cursor-not-allowed disabled:bg-[#302e2a] disabled:text-[#67625b] sm:px-6">
             <span className="hidden sm:inline">Send</span>
             <Send className="h-4 w-4" aria-hidden="true" />
           </button>
