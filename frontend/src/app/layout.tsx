@@ -24,6 +24,7 @@ const mono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://livepulse-hq.vercel.app"),
   title: "LivePulse | The live event desk",
   description: "Find the room. Join the crowd. Follow live events as they happen.",
   manifest: "/manifest.json",
