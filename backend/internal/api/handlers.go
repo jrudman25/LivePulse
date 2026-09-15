@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -129,6 +130,31 @@ func (s *Server) HandleJoinSession(w http.ResponseWriter, r *http.Request) {
 func (s *Server) HandleGetStats(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	// Batch mode: session_ids=a,b,c returns a {session_id: active_user_count} map
+	// so listing pages can fetch all visible room counts in one request.
+	if sessionIDsParam := r.URL.Query().Get("session_ids"); sessionIDsParam != "" {
+		ids := strings.Split(sessionIDsParam, ",")
+		if len(ids) > 200 {
+			http.Error(w, "too many session_ids (max 200)", http.StatusBadRequest)
+			return
+		}
+		counts := make(map[string]int, len(ids))
+		for _, id := range ids {
+			id = strings.TrimSpace(id)
+			if id == "" {
+				continue
+			}
+			if stats, exists := s.aggManager.GetSession(id); exists {
+				counts[id] = stats.GetActiveUserCount()
+			} else {
+				counts[id] = 0
+			}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(counts)
 		return
 	}
 
