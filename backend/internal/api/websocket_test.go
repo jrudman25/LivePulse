@@ -2,6 +2,9 @@ package api
 
 import (
 	"net/http"
+	"net/http/httptest"
+	"net/url"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,7 +39,25 @@ func TestCheckOrigin_RejectsMaliciousDomain(t *testing.T) {
 }
 
 func TestHandleWebSocket_RejectsMissingSessionID(t *testing.T) {
-	// Verify the sessionID guard logic directly
-	sessionID := ""
-	assert.Empty(t, sessionID, "empty session_id should be caught before upgrade")
+	server := &Server{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/ws", nil)
+	server.HandleWebSocket(rec, req)
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestHandleWebSocket_RejectsInvalidSessionID(t *testing.T) {
+	server := &Server{}
+	for _, id := range []string{"", "bad id!", strings.Repeat("a", 200), "../etc"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/ws?session_id="+url.QueryEscape(id), nil)
+		server.HandleWebSocket(rec, req)
+		assert.Equal(t, http.StatusBadRequest, rec.Code, "session_id %q should be rejected", id)
+	}
+}
+
+func TestIsValidSessionID(t *testing.T) {
+	for _, id := range []string{"Z7r9jZ1Adb8f1", "550e8400-e29b-41d4-a716-446655440000", "wsbench-local", "room_42"} {
+		assert.True(t, isValidSessionID(id), "session_id %q should be valid", id)
+	}
 }

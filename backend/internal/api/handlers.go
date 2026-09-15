@@ -1,18 +1,31 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jrudman25/livepulse/internal/aggregation"
 	"github.com/jrudman25/livepulse/internal/events"
 	"github.com/jrudman25/livepulse/internal/milestones"
 	"github.com/jrudman25/livepulse/internal/storage"
 )
+
+// maxJSONBody bounds JSON request bodies to keep memory usage predictable.
+const maxJSONBody = 1 << 20 // 1 MiB
+
+// maxSearchQueryLen bounds the public search term forwarded to Ticketmaster.
+const maxSearchQueryLen = 100
+
+// maxMilestonesPerSession bounds milestone thresholds per created session.
+const maxMilestonesPerSession = 50
 
 // Server holds the API server dependencies
 type Server struct {
@@ -21,6 +34,7 @@ type Server struct {
 	tracker    *milestones.Tracker
 	wsHub      *WebSocketHub
 	db         *storage.PostgresClient
+	redis      *storage.RedisClient
 	apiFetcher *events.APIFetcher
 }
 
@@ -31,6 +45,7 @@ func NewServer(
 	tracker *milestones.Tracker,
 	wsHub *WebSocketHub,
 	db *storage.PostgresClient,
+	redis *storage.RedisClient,
 	apiFetcher *events.APIFetcher,
 ) *Server {
 	return &Server{
@@ -39,6 +54,7 @@ func NewServer(
 		tracker:    tracker,
 		wsHub:      wsHub,
 		db:         db,
+		redis:      redis,
 		apiFetcher: apiFetcher,
 	}
 }
@@ -64,6 +80,7 @@ func (s *Server) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req CreateSessionRequest
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
@@ -71,6 +88,14 @@ func (s *Server) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
 
 	if req.Name == "" {
 		req.Name = "Untitled Event"
+	}
+	if len(req.Name) > 200 {
+		http.Error(w, "name exceeds 200 characters", http.StatusBadRequest)
+		return
+	}
+	if len(req.Milestones) > maxMilestonesPerSession {
+		http.Error(w, "too many milestones (max 50)", http.StatusBadRequest)
+		return
 	}
 
 	// Generate session ID
@@ -94,19 +119,37 @@ func (s *Server) HandleCreateSession(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(response)
 }
 
-// HandleJoinSession allows a user to join a session
+// HandleJoinSession allows an authenticated user to join a session.
+// The user identity comes from the verified Clerk token, not request input.
 func (s *Server) HandleJoinSession(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
 
-	sessionID := r.URL.Query().Get("session_id")
-	userID := r.URL.Query().Get("user_id")
-
-	if sessionID == "" || userID == "" {
-		http.Error(w, "session_id and user_id are required", http.StatusBadRequest)
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok || userID == "" {
+		http.Error(w, "Unauthorized context", http.StatusUnauthorized)
 		return
+	}
+
+	sessionID := r.URL.Query().Get("session_id")
+	if !isValidSessionID(sessionID) {
+		http.Error(w, "valid session_id is required", http.StatusBadRequest)
+		return
+	}
+
+	// The session must already exist (created via the API, an active
+	// WebSocket room, or a known event) so joins cannot mint arbitrary state.
+	if _, exists := s.aggManager.GetSession(sessionID); !exists {
+		if _, err := s.db.GetEvent(r.Context(), sessionID); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				http.Error(w, "session not found", http.StatusNotFound)
+				return
+			}
+			http.Error(w, "Failed to validate session", http.StatusInternalServerError)
+			return
+		}
 	}
 
 	// Create join event
@@ -199,12 +242,48 @@ func (s *Server) HandleGetMilestones(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// HandleHealth is a health check endpoint
+// HandleHealth is a lightweight liveness check
 func (s *Server) HandleHealth(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{
 		"status": "healthy",
 		"time":   time.Now().UTC().Format(time.RFC3339),
+	})
+}
+
+// HandleReady reports whether the dependencies the service needs are
+// reachable. It is intended for deployment readiness probes.
+func (s *Server) HandleReady(w http.ResponseWriter, r *http.Request) {
+	ctx, cancel := context.WithTimeout(r.Context(), 1500*time.Millisecond)
+	defer cancel()
+
+	status := map[string]string{}
+	ready := true
+
+	if err := s.db.Ping(ctx); err != nil {
+		status["postgres"] = err.Error()
+		ready = false
+	} else {
+		status["postgres"] = "ok"
+	}
+
+	if s.redis == nil {
+		status["redis"] = "not configured"
+		ready = false
+	} else if err := s.redis.Ping(ctx); err != nil {
+		status["redis"] = err.Error()
+		ready = false
+	} else {
+		status["redis"] = "ok"
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	if !ready {
+		w.WriteHeader(http.StatusServiceUnavailable)
+	}
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"status": map[bool]string{true: "ready", false: "not ready"}[ready],
+		"checks": status,
 	})
 }
 
@@ -215,18 +294,24 @@ func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID := r.URL.Query().Get("user_id")
+	// Favorite decoration uses the verified Clerk identity injected by
+	// OptionalClerkMiddleware; client-supplied user IDs are never trusted.
+	userID, _ := UserIDFromContext(r.Context())
+
 	q := r.URL.Query().Get("q")
+	if len(q) > maxSearchQueryLen {
+		q = q[:maxSearchQueryLen]
+	}
 	offsetStr := r.URL.Query().Get("offset")
 
 	offset := 0
-	if val, err := strconv.Atoi(offsetStr); err == nil {
+	if val, err := strconv.Atoi(offsetStr); err == nil && val > 0 {
 		offset = val
 	}
 
 	// Infinite Search Interceptor: Fire to TM specifically if query isn't empty, gracefully load DB implicitly!
 	if q != "" {
-		s.apiFetcher.FetchSearchKeyword(q)
+		s.apiFetcher.FetchSearchKeyword(r.Context(), q)
 	}
 
 	eventsData, err := s.db.GetUpcomingEvents(r.Context(), 200, offset, q)
@@ -235,9 +320,14 @@ func (s *Server) HandleGetLiveEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Dynamically inject favorite states if a user_id is provided
+	// Dynamically inject favorite states when the request is authenticated
 	if userID != "" {
-		favIDs, _ := s.db.GetUserFavorites(r.Context(), userID)
+		favIDs, err := s.db.GetUserFavorites(r.Context(), userID)
+		if err != nil {
+			log.Printf("Failed to load favorites for decorated listing: %v", err)
+			http.Error(w, "Failed to retrieve events", http.StatusInternalServerError)
+			return
+		}
 		favMap := make(map[string]bool)
 		for _, fid := range favIDs {
 			favMap[fid] = true
@@ -266,7 +356,12 @@ func (s *Server) HandleGetEvent(w http.ResponseWriter, r *http.Request) {
 	}
 	event, err := s.db.GetEvent(r.Context(), id)
 	if err != nil {
-		http.Error(w, "Event not found", http.StatusNotFound)
+		if errors.Is(err, pgx.ErrNoRows) {
+			http.Error(w, "Event not found", http.StatusNotFound)
+			return
+		}
+		log.Printf("Failed to fetch event %s: %v", id, err)
+		http.Error(w, "Failed to retrieve event", http.StatusInternalServerError)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -285,12 +380,11 @@ func (s *Server) HandleToggleFavorite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userIDVal := r.Context().Value("user_id")
-	if userIDVal == nil {
+	userID, ok := UserIDFromContext(r.Context())
+	if !ok || userID == "" {
 		http.Error(w, "Unauthorized context", http.StatusUnauthorized)
 		return
 	}
-	userID := userIDVal.(string)
 
 	if r.Method == http.MethodGet {
 		favorites, err := s.db.GetUserFavorites(r.Context(), userID)
@@ -304,6 +398,7 @@ func (s *Server) HandleToggleFavorite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req FavoriteRequest
+	r.Body = http.MaxBytesReader(w, r.Body, maxJSONBody)
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.EventID == "" {
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return

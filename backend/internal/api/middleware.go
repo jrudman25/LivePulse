@@ -3,8 +3,21 @@ package api
 import (
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 )
+
+// parseOriginList parses a comma-separated origin allowlist.
+func parseOriginList(raw string) map[string]bool {
+	origins := make(map[string]bool)
+	for _, o := range strings.Split(raw, ",") {
+		if trimmed := strings.TrimSpace(o); trimmed != "" {
+			origins[trimmed] = true
+		}
+	}
+	return origins
+}
 
 // LoggingMiddleware logs HTTP requests
 func LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
@@ -19,18 +32,27 @@ func LoggingMiddleware(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// CORSMiddleware adds CORS headers
+// CORSMiddleware adds CORS headers. When CORS_ALLOWED_ORIGINS (comma-separated)
+// is set, only those origins receive allow headers; otherwise it falls back to
+// Allow-Origin: * for local development.
 func CORSMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	allowed := parseOriginList(os.Getenv("CORS_ALLOWED_ORIGINS"))
+
 	return func(w http.ResponseWriter, r *http.Request) {
-		// Allow all origins for development
-		// In production, restrict to specific origins
-		w.Header().Set("Access-Control-Allow-Origin", "*")
+		origin := r.Header.Get("Origin")
+
+		if len(allowed) == 0 {
+			w.Header().Set("Access-Control-Allow-Origin", "*")
+		} else if allowed[origin] {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Add("Vary", "Origin")
+		}
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 
 		// Handle preflight requests
 		if r.Method == "OPTIONS" {
-			w.WriteHeader(http.StatusOK)
+			w.WriteHeader(http.StatusNoContent)
 			return
 		}
 

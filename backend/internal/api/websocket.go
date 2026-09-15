@@ -5,25 +5,54 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"sync"
 	"time"
+	"unicode"
 
 	"github.com/gorilla/websocket"
 	"github.com/jrudman25/livepulse/internal/events"
+	"github.com/jrudman25/livepulse/internal/storage"
 )
 
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
-	CheckOrigin: func(r *http.Request) bool {
-		origin := r.Header.Get("Origin")
-		// Formal CSWSH lockdown mitigating completely cross domain attacks natively
-		allowedOrigins := map[string]bool{
-			"http://localhost:3000":           true,
-			"https://livepulse-hq.vercel.app": true,
+	CheckOrigin:     checkWSOrigin,
+}
+
+// defaultWSOrigins is the origin allowlist used when WS_ALLOWED_ORIGINS is unset.
+var defaultWSOrigins = map[string]bool{
+	"http://localhost:3000":           true,
+	"https://livepulse-hq.vercel.app": true,
+}
+
+// checkWSOrigin enforces the WebSocket CSWSH origin allowlist. When
+// WS_ALLOWED_ORIGINS (comma-separated) is set it replaces the defaults;
+// clients that omit the Origin header are always allowed.
+func checkWSOrigin(r *http.Request) bool {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return true
+	}
+	if configured := parseOriginList(os.Getenv("WS_ALLOWED_ORIGINS")); len(configured) > 0 {
+		return configured[origin]
+	}
+	return defaultWSOrigins[origin]
+}
+
+// isValidSessionID bounds session IDs to a reasonable length and charset
+// (Ticketmaster IDs, UUIDs, and benchmark IDs are alphanumeric with - _).
+func isValidSessionID(s string) bool {
+	if len(s) == 0 || len(s) > 128 {
+		return false
+	}
+	for _, r := range s {
+		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '-' && r != '_' {
+			return false
 		}
-		return allowedOrigins[origin] || origin == ""
-	},
+	}
+	return true
 }
 
 // WebSocketHub manages WebSocket connections for all sessions
@@ -42,11 +71,10 @@ func NewWebSocketHub() *WebSocketHub {
 // SessionHub manages connections for a single session
 type SessionHub struct {
 	sessionID  string
-	clients    map[*Client]bool
+	clients    map[*Client]bool // owned exclusively by the run() goroutine
 	broadcast  chan []byte
 	register   chan *Client
 	unregister chan *Client
-	mu         sync.RWMutex
 }
 
 // NewSessionHub creates a new session hub
@@ -67,22 +95,17 @@ func (h *SessionHub) run() {
 	for {
 		select {
 		case client := <-h.register:
-			h.mu.Lock()
 			h.clients[client] = true
-			h.mu.Unlock()
 			log.Printf("Client connected to session %s (total: %d)", h.sessionID, len(h.clients))
 
 		case client := <-h.unregister:
-			h.mu.Lock()
 			if _, ok := h.clients[client]; ok {
 				delete(h.clients, client)
 				close(client.send)
 			}
-			h.mu.Unlock()
 			log.Printf("Client disconnected from session %s (total: %d)", h.sessionID, len(h.clients))
 
 		case message := <-h.broadcast:
-			h.mu.RLock()
 			for client := range h.clients {
 				select {
 				case client.send <- message:
@@ -91,7 +114,6 @@ func (h *SessionHub) run() {
 					delete(h.clients, client)
 				}
 			}
-			h.mu.RUnlock()
 		}
 	}
 }
@@ -105,8 +127,46 @@ type Client struct {
 	userID    string
 }
 
+// trySend queues an outbound message without blocking; safe against a
+// send channel already closed by the hub's slow-consumer eviction.
+func (c *Client) trySend(msg []byte) {
+	defer func() { _ = recover() }()
+	select {
+	case c.send <- msg:
+	default:
+	}
+}
+
+// replayChatHistory pushes the most recent persisted room messages to the
+// newly authenticated client so joining users can follow the conversation.
+func (c *Client) replayChatHistory(redisClient *storage.RedisClient) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	history, err := redisClient.GetRecentChat(ctx, c.sessionID)
+	if err != nil {
+		log.Printf("Error loading chat history for session %s: %v", c.sessionID, err)
+		return
+	}
+
+	const maxReplay = 100
+	if len(history) > maxReplay {
+		history = history[len(history)-maxReplay:]
+	}
+	for _, msg := range history {
+		data, err := json.Marshal(map[string]interface{}{
+			"type":    "chat",
+			"message": msg,
+		})
+		if err != nil {
+			continue
+		}
+		c.trySend(data)
+	}
+}
+
 // readPump reads messages from the WebSocket connection
-func (c *Client) readPump(eventQueue *events.Queue) {
+func (c *Client) readPump(eventQueue *events.Queue, redisClient *storage.RedisClient) {
 	defer func() {
 		if c.userID != "" { // Only safely unregister and alert if formally authenticated!
 			c.hub.unregister <- c
@@ -116,11 +176,10 @@ func (c *Client) readPump(eventQueue *events.Queue) {
 		c.conn.Close()
 	}()
 
-	c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-	c.conn.SetPongHandler(func(string) error {
-		c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
-		return nil
-	})
+	// Bound frame size and require authentication within 15s; the 60s
+	// read deadline plus pong refresh only applies after authentication.
+	c.conn.SetReadLimit(8192)
+	c.conn.SetReadDeadline(time.Now().Add(15 * time.Second))
 
 	for {
 		_, message, err := c.conn.ReadMessage()
@@ -135,7 +194,7 @@ func (c *Client) readPump(eventQueue *events.Queue) {
 		var msg map[string]interface{}
 		if err := json.Unmarshal(message, &msg); err != nil {
 			log.Printf("Error parsing message: %v", err)
-			c.send <- []byte(`{"type":"error","message":"Invalid JSON payload structure"}`)
+			c.trySend([]byte(`{"type":"error","message":"Invalid JSON payload structure"}`))
 			continue
 		}
 
@@ -148,20 +207,30 @@ func (c *Client) readPump(eventQueue *events.Queue) {
 		if c.userID == "" {
 			if msgType == "authenticate" {
 				token, _ := msg["token"].(string)
-				userID, err := VerifyTokenManually(context.Background(), token)
+				authCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				userID, err := VerifyTokenManually(authCtx, token)
+				cancel()
 				if err != nil {
-					c.send <- []byte(`{"type":"error","message":"Authentication invalid or expired"}`)
+					c.trySend([]byte(`{"type":"error","message":"Authentication invalid or expired"}`))
 					break // exit pump, closing connection natively
 				}
-				
+
 				c.userID = userID
+				c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+				c.conn.SetPongHandler(func(string) error {
+					c.conn.SetReadDeadline(time.Now().Add(60 * time.Second))
+					return nil
+				})
 				c.hub.register <- c
 				joinEvent := events.JoinSessionEvent(c.sessionID, c.userID)
 				eventQueue.Enqueue(joinEvent)
-				c.send <- []byte(`{"type":"authenticated"}`)
+				c.trySend([]byte(`{"type":"authenticated"}`))
+				if redisClient != nil {
+					go c.replayChatHistory(redisClient)
+				}
 				continue
 			} else {
-				c.send <- []byte(`{"type":"error","message":"You must authenticate before sending events"}`)
+				c.trySend([]byte(`{"type":"error","message":"You must authenticate before sending events"}`))
 				break // kill connection payload natively!
 			}
 		}
@@ -181,11 +250,11 @@ func (c *Client) readPump(eventQueue *events.Queue) {
 				continue
 			}
 			authorName, _ := msg["author_name"].(string)
-			
+
 			// Simple content filter (expand this later)
 			if len(text) > 500 {
 				log.Printf("Chat message artificially blocked natively due to string boundaries.")
-				c.send <- []byte(`{"type":"error","message":"Message payload exceeded 500 character limit"}`)
+				c.trySend([]byte(`{"type":"error","message":"Message payload exceeded 500 character limit"}`))
 				continue
 			}
 
@@ -274,15 +343,19 @@ func (h *WebSocketHub) BroadcastToSession(sessionID string, message interface{})
 	h.mu.RUnlock()
 
 	if exists {
-		hub.broadcast <- data
+		select {
+		case hub.broadcast <- data:
+		default:
+			log.Printf("Broadcast buffer full for session %s; dropping message", sessionID)
+		}
 	}
 }
 
 func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 	sessionID := r.URL.Query().Get("session_id")
 
-	if sessionID == "" {
-		http.Error(w, "session_id is required", http.StatusBadRequest)
+	if !isValidSessionID(sessionID) {
+		http.Error(w, "valid session_id is required", http.StatusBadRequest)
 		return
 	}
 
@@ -306,5 +379,5 @@ func (s *Server) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	// Start concurrent pumps instantly to seamlessly wait for Authentication Handshake Payload over encrypted channel
 	go client.writePump() // allows server to natively kickback JSON errors organically.
-	go client.readPump(s.eventQueue)
+	go client.readPump(s.eventQueue, s.redis)
 }

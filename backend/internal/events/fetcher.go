@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/jrudman25/livepulse/internal/storage"
@@ -16,18 +18,25 @@ import (
 
 // APIFetcher handles background event ingestion
 type APIFetcher struct {
-	db     *storage.PostgresClient
-	cron   *cron.Cron
-	apiKey string
+	db         *storage.PostgresClient
+	cron       *cron.Cron
+	apiKey     string
+	httpClient *http.Client
+
+	fetching    atomic.Bool // prevents overlapping ingestion runs
+	searchMu    sync.Mutex
+	searchCache map[string]time.Time // keyword -> last fetch, for in-flight/dup dedup
 }
 
 // NewAPIFetcher initializes the background fetch scheduler
 func NewAPIFetcher(db *storage.PostgresClient, apiKey string) *APIFetcher {
 	c := cron.New()
 	return &APIFetcher{
-		db:     db,
-		cron:   c,
-		apiKey: apiKey,
+		db:          db,
+		cron:        c,
+		apiKey:      apiKey,
+		httpClient:  &http.Client{Timeout: 20 * time.Second},
+		searchCache: make(map[string]time.Time),
 	}
 }
 
@@ -87,12 +96,22 @@ type TMEvent struct {
 	} `json:"_embedded"`
 }
 
-// FetchAPIEvents hits the Ticketmaster API and populates the DB
+// FetchAPIEvents hits the Ticketmaster API and populates the DB.
+// A single-flight guard prevents overlapping runs from the cron, the
+// startup fetch, and the admin trigger.
 func (f *APIFetcher) FetchAPIEvents() {
 	if f.apiKey == "" || f.apiKey == "your_ticketmaster_api_key" {
 		log.Println("Skipping TM ingestion: EXTERNAL_API_KEY is missing or set to default")
 		return
 	}
+	if !f.fetching.CompareAndSwap(false, true) {
+		log.Println("Skipping TM ingestion: a fetch run is already in progress")
+		return
+	}
+	defer f.fetching.Store(false)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
 
 	log.Println("Fetching new events from Ticketmaster API...")
 
@@ -106,7 +125,12 @@ func (f *APIFetcher) FetchAPIEvents() {
 	for page := 0; page < 2; page++ {
 		exitLoop := func() bool {
 			urlQuery := fmt.Sprintf("https://app.ticketmaster.com/discovery/v2/events.json?apikey=%s&size=200&page=%d&sort=relevance,desc&startDateTime=%s&endDateTime=%s&%s", f.apiKey, page, nowStr, endStr, classificationParams)
-			resp, err := http.Get(urlQuery)
+			req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlQuery, nil)
+			if err != nil {
+				log.Printf("Error building TM API request on page %d: %v", page, err)
+				return true
+			}
+			resp, err := f.httpClient.Do(req)
 			if err != nil {
 				log.Printf("Error requesting TM API on page %d: %v", page, err)
 				return true
@@ -184,7 +208,7 @@ func (f *APIFetcher) FetchAPIEvents() {
 					CreatedAt:     time.Now(),
 				}
 
-				if err := f.db.InsertEvent(context.Background(), e); err != nil {
+				if err := f.db.InsertEvent(ctx, e); err != nil {
 					log.Printf("Failed to insert event %s: %v", e.ExternalAPIID, err)
 				} else {
 					log.Printf("Successfully ingested event: %s", e.Title)
@@ -200,24 +224,47 @@ func (f *APIFetcher) FetchAPIEvents() {
 	}
 
 	// Trigger PostgreSQL garbage collector to natively erase dead history mapping explicitly to -1 Hour constraints
-	if err := f.db.DeleteExpiredEvents(context.Background()); err != nil {
+	if err := f.db.DeleteExpiredEvents(ctx); err != nil {
 		log.Printf("Error deleting expired events from DB: %v", err)
 	} else {
 		log.Println("Pristinely swept database of legacy expired events.")
 	}
 }
 
-// FetchSearchKeyword provides infinite On-Demand database insertion by aggressively searching Ticketmaster natively
-func (f *APIFetcher) FetchSearchKeyword(keyword string) {
+// searchDedupTTL is how long a keyword is considered freshly ingested;
+// repeat searches within the window are served from the database alone.
+const searchDedupTTL = 5 * time.Minute
+
+// FetchSearchKeyword provides infinite On-Demand database insertion by aggressively searching Ticketmaster natively.
+// Identical keywords within searchDedupTTL are skipped because the events
+// they ingested are already in PostgreSQL and the caller re-queries it.
+func (f *APIFetcher) FetchSearchKeyword(ctx context.Context, keyword string) {
 	if f.apiKey == "" || f.apiKey == "your_ticketmaster_api_key" {
 		return
 	}
+
+	// Deduplicate recently fetched keywords; results come from the DB anyway.
+	f.searchMu.Lock()
+	if last, ok := f.searchCache[keyword]; ok && time.Since(last) < searchDedupTTL {
+		f.searchMu.Unlock()
+		return
+	}
+	f.searchCache[keyword] = time.Now()
+	if len(f.searchCache) > 1000 {
+		f.searchCache = make(map[string]time.Time) // bound memory: reset rather than grow forever
+	}
+	f.searchMu.Unlock()
 
 	nowStr := time.Now().UTC().Format("2006-01-02T15:04:05Z")
 	safeKeyword := url.QueryEscape(keyword)
 	urlQuery := fmt.Sprintf("https://app.ticketmaster.com/discovery/v2/events.json?apikey=%s&size=50&sort=date,asc&startDateTime=%s&keyword=%s", f.apiKey, nowStr, safeKeyword)
 
-	resp, err := http.Get(urlQuery)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, urlQuery, nil)
+	if err != nil {
+		log.Printf("Error building TM search request: %v", err)
+		return
+	}
+	resp, err := f.httpClient.Do(req)
 	if err != nil {
 		log.Printf("Error requesting TM search API: %v", err)
 		return
@@ -271,7 +318,8 @@ func (f *APIFetcher) FetchSearchKeyword(keyword string) {
 			CreatedAt:     time.Now(),
 		}
 
-		// Insert silently to maintain user velocity!
-		f.db.InsertEvent(context.Background(), e)
+		if err := f.db.InsertEvent(ctx, e); err != nil {
+			log.Printf("Search ingestion failed to insert event %s: %v", e.ExternalAPIID, err)
+		}
 	}
 }

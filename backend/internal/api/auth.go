@@ -9,6 +9,19 @@ import (
 	"github.com/clerk/clerk-sdk-go/v2/jwt"
 )
 
+// contextKey is a private context key type so our values cannot collide
+// with keys set by other middleware or packages.
+type contextKey string
+
+const userIDContextKey contextKey = "user_id"
+
+// UserIDFromContext returns the authenticated Clerk subject stored by
+// ClerkMiddleware or OptionalClerkMiddleware.
+func UserIDFromContext(ctx context.Context) (string, bool) {
+	id, ok := ctx.Value(userIDContextKey).(string)
+	return id, ok
+}
+
 // SetClerkKey initializes the Clerk SDK with the secret key
 func SetClerkKey(secret string) {
 	clerk.SetKey(secret)
@@ -34,7 +47,31 @@ func ClerkMiddleware(next http.HandlerFunc) http.HandlerFunc {
 		}
 
 		// Inject UserID into request context
-		ctx := context.WithValue(r.Context(), "user_id", claims.Subject)
+		ctx := context.WithValue(r.Context(), userIDContextKey, claims.Subject)
+		next(w, r.WithContext(ctx))
+	}
+}
+
+// OptionalClerkMiddleware verifies the Clerk JWT when a bearer token is
+// present and injects the subject into context; requests without a token
+// proceed unauthenticated. A present-but-invalid token is rejected.
+func OptionalClerkMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		sessionToken := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if sessionToken == "" {
+			next(w, r)
+			return
+		}
+
+		claims, err := jwt.Verify(r.Context(), &jwt.VerifyParams{
+			Token: sessionToken,
+		})
+		if err != nil {
+			http.Error(w, "Unauthorized: invalid token", http.StatusUnauthorized)
+			return
+		}
+
+		ctx := context.WithValue(r.Context(), userIDContextKey, claims.Subject)
 		next(w, r.WithContext(ctx))
 	}
 }

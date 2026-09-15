@@ -12,11 +12,12 @@ import (
 
 // Config holds all application configuration
 type Config struct {
-	Server    ServerConfig
-	Worker    WorkerConfig
-	Milestone MilestoneConfig
-	Postgres  PostgresConfig
-	Redis     RedisConfig
+	Environment string // "development" (default) or "production"
+	Server      ServerConfig
+	Worker      WorkerConfig
+	Milestone   MilestoneConfig
+	Postgres    PostgresConfig
+	Redis       RedisConfig
 }
 
 // ServerConfig holds HTTP server configuration
@@ -53,6 +54,7 @@ func Load() (*Config, error) {
 	_ = godotenv.Load()
 
 	cfg := &Config{
+		Environment: strings.ToLower(getEnv("APP_ENV", "development")),
 		Server: ServerConfig{
 			Port:         getEnv("SERVER_PORT", "8080"),
 			ReadTimeout:  parseDuration(getEnv("SERVER_READ_TIMEOUT", "15s")),
@@ -128,6 +130,29 @@ func (c *Config) Validate() error {
 	}
 	if c.Redis.URL == "" {
 		return fmt.Errorf("REDIS_URL is required")
+	}
+
+	// In production, fail fast when the secrets and transport security the
+	// service actually needs are missing rather than reporting healthy.
+	if c.Environment == "production" {
+		if os.Getenv("CLERK_SECRET_KEY") == "" {
+			return fmt.Errorf("CLERK_SECRET_KEY is required in production")
+		}
+		if apiKey := os.Getenv("EXTERNAL_API_KEY"); apiKey == "" || apiKey == "your_ticketmaster_api_key" {
+			return fmt.Errorf("EXTERNAL_API_KEY is required in production")
+		}
+		if strings.Contains(c.Postgres.DatabaseURL, "sslmode=disable") {
+			return fmt.Errorf("DATABASE_URL must use TLS in production (sslmode=disable is not allowed)")
+		}
+		if !strings.HasPrefix(c.Redis.URL, "rediss://") {
+			return fmt.Errorf("REDIS_URL must use TLS in production (rediss://)")
+		}
+		if os.Getenv("CORS_ALLOWED_ORIGINS") == "" {
+			return fmt.Errorf("CORS_ALLOWED_ORIGINS is required in production")
+		}
+		if os.Getenv("WS_ALLOWED_ORIGINS") == "" {
+			return fmt.Errorf("WS_ALLOWED_ORIGINS is required in production")
+		}
 	}
 	return nil
 }

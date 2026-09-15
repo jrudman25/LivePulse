@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -76,6 +77,27 @@ func main() {
 	wsHub := api.NewWebSocketHub()
 	log.Println("WebSocket hub initialized")
 
+	// chatTTLSet tracks sessions whose chat key already has an expiration,
+	// so the TTL write happens once per session instead of per message.
+	var chatTTLSet sync.Map
+
+	// resolveChatExpiry determines when a room's chat should expire: one hour
+	// after the event ends, or ~25h from now for ad-hoc sessions that have no
+	// backing event row.
+	resolveChatExpiry := func(sessionID string) time.Time {
+		if expireAt, ok := chatTTLSet.Load(sessionID); ok {
+			return expireAt.(time.Time)
+		}
+		expireAt := time.Now().UTC().Add(24 * time.Hour)
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+		if event, err := pgClient.GetEvent(ctx, sessionID); err == nil {
+			expireAt = event.EndTime
+		}
+		cancel()
+		chatTTLSet.Store(sessionID, expireAt)
+		return expireAt
+	}
+
 	// Create milestone tracker with notification handler
 	tracker := milestones.NewTracker(func(achievement *milestones.MilestoneAchievement) {
 		log.Printf("MILESTONE ACHIEVED: %s - %s", achievement.SessionID, achievement.Milestone.Description)
@@ -127,6 +149,8 @@ func main() {
 				redisCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 				if err := redisClient.SaveChatMessage(redisCtx, event.SessionID, chatMsg); err != nil {
 					log.Printf("Error saving chat message to redis: %v", err)
+				} else if err := redisClient.SetChatTTL(redisCtx, event.SessionID, resolveChatExpiry(event.SessionID)); err != nil {
+					log.Printf("Error setting chat TTL for session %s: %v", event.SessionID, err)
 				}
 				cancel()
 
@@ -147,27 +171,49 @@ func main() {
 	log.Printf("Worker pool started with %d workers", cfg.Worker.Count)
 
 	// Create API server
-	apiServer := api.NewServer(eventQueue, aggManager, tracker, wsHub, pgClient, apiFetcher)
+	apiServer := api.NewServer(eventQueue, aggManager, tracker, wsHub, pgClient, redisClient, apiFetcher)
 
 	// Set up HTTP routes
 	mux := http.NewServeMux()
 
-	// Health check
+	// Health checks
 	mux.HandleFunc("/health", api.Chain(apiServer.HandleHealth, api.LoggingMiddleware, api.CORSMiddleware))
+	mux.HandleFunc("/health/ready", api.Chain(apiServer.HandleReady, api.LoggingMiddleware, api.CORSMiddleware))
 
-	// Session management
-	mux.HandleFunc("/api/sessions", api.Chain(apiServer.HandleCreateSession, api.LoggingMiddleware, api.CORSMiddleware, api.RecoveryMiddleware))
-	mux.HandleFunc("/api/sessions/join", api.Chain(apiServer.HandleJoinSession, api.LoggingMiddleware, api.CORSMiddleware, api.RecoveryMiddleware))
+	// Session management (mutations require a verified Clerk token)
+	mux.HandleFunc("/api/sessions", api.Chain(apiServer.HandleCreateSession, api.LoggingMiddleware, api.CORSMiddleware, api.RecoveryMiddleware, api.ClerkMiddleware))
+	mux.HandleFunc("/api/sessions/join", api.Chain(apiServer.HandleJoinSession, api.LoggingMiddleware, api.CORSMiddleware, api.RecoveryMiddleware, api.ClerkMiddleware))
 	mux.HandleFunc("/api/sessions/stats", api.Chain(apiServer.HandleGetStats, api.LoggingMiddleware, api.CORSMiddleware, api.RecoveryMiddleware))
 	mux.HandleFunc("/api/sessions/milestones", api.Chain(apiServer.HandleGetMilestones, api.LoggingMiddleware, api.CORSMiddleware, api.RecoveryMiddleware))
 
 	// API integration routes
-	mux.HandleFunc("/api/events", api.Chain(apiServer.HandleGetLiveEvents, api.LoggingMiddleware, api.CORSMiddleware))
+	mux.HandleFunc("/api/events", api.Chain(apiServer.HandleGetLiveEvents, api.LoggingMiddleware, api.CORSMiddleware, api.OptionalClerkMiddleware))
 	mux.HandleFunc("/api/events/single", api.Chain(apiServer.HandleGetEvent, api.LoggingMiddleware, api.CORSMiddleware))
 	mux.HandleFunc("/api/favorites", api.Chain(apiServer.HandleToggleFavorite, api.LoggingMiddleware, api.CORSMiddleware, api.ClerkMiddleware))
 
-	// Admin trigger for Ticketmaster
+	// Admin trigger for Ticketmaster: POST only, throttled, and requires
+	// X-Admin-Key when ADMIN_API_KEY is configured. The fetcher itself is
+	// single-flight so triggers can never overlap ingestion runs.
+	adminKey := os.Getenv("ADMIN_API_KEY")
+	var lastTriggerMu sync.Mutex
+	var lastTrigger time.Time
 	mux.HandleFunc("/api/admin/trigger-fetch", api.Chain(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		if adminKey != "" && r.Header.Get("X-Admin-Key") != adminKey {
+			http.Error(w, "Unauthorized", http.StatusUnauthorized)
+			return
+		}
+		lastTriggerMu.Lock()
+		if time.Since(lastTrigger) < time.Minute {
+			lastTriggerMu.Unlock()
+			http.Error(w, "Fetch was already triggered recently", http.StatusTooManyRequests)
+			return
+		}
+		lastTrigger = time.Now()
+		lastTriggerMu.Unlock()
 		go apiFetcher.FetchAPIEvents()
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte(`{"status": "ticketmaster fetch triggered"}`))
