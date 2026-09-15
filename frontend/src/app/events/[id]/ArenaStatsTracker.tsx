@@ -9,12 +9,20 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
   const { getToken, isSignedIn } = useAuth();
   const [isLiking, setIsLiking] = useState(false);
   const [activeUsers, setActiveUsers] = useState<number | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!notice) {return;}
+    const timeoutId = setTimeout(() => setNotice(null), 3500);
+    return () => clearTimeout(timeoutId);
+  }, [notice]);
 
   useEffect(() => {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
 
-    // Poll Stats
+    // Poll Stats (skipped while the tab is hidden)
     const pollStats = () => {
+      if (document.visibilityState === "hidden") {return;}
       fetch(`${API_URL}/api/sessions/stats?session_id=${eventId}`)
         .then(r => r.json())
         .then(data => {
@@ -30,6 +38,7 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
     // Fetch initial favorites if logged in
     if (isSignedIn) {
       getToken().then(token => {
+        if (!token) {return;}
         fetch(`${API_URL}/api/favorites`, {
           headers: { "Authorization": `Bearer ${token}` }
         })
@@ -40,7 +49,7 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
             }
           })
           .catch(() => { });
-      });
+      }).catch(() => { });
     }
 
     return () => clearInterval(interval);
@@ -49,7 +58,7 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
   const toggleFavorite = async (e: React.MouseEvent) => {
     e.preventDefault();
     if (!isSignedIn) {
-      alert("Please sign in to favorite events!");
+      setNotice("Sign in to save events");
       return;
     }
     setIsLiking(true);
@@ -83,6 +92,7 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
         <span>{isFavorite ? "Saved to your desk" : "Save this event"}</span>
         <Heart className="h-4 w-4" fill={isFavorite ? "currentColor" : "none"} aria-hidden="true" />
       </button>
+      {notice && <p role="status" className="pb-4 font-mono text-[10px] font-semibold uppercase tracking-[0.12em] text-[#ed2f24]">{notice}</p>}
     </div>
   );
 }

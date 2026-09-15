@@ -60,7 +60,7 @@ export default function RootLayout({
                   <span className="grid h-9 w-9 place-items-center bg-[#ed2f24] font-heading text-xl font-black text-[#fffaf2] transition-transform group-hover:-rotate-3">LP</span>
                   <span className="font-heading text-2xl font-extrabold uppercase tracking-[-0.03em] text-[#f2efe8]">LivePulse</span>
                 </Link>
-                <nav className="hidden items-center gap-8 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[#aaa49b] lg:flex" aria-label="Primary navigation">
+                <nav className="hidden items-center gap-6 font-mono text-[11px] font-medium uppercase tracking-[0.16em] text-[#aaa49b] md:flex lg:gap-8" aria-label="Primary navigation">
                   <Link href="/events" className="transition-colors hover:text-[#f2efe8]">Events</Link>
                   <Link href="/help" className="transition-colors hover:text-[#f2efe8]">Help & FAQ</Link>
                   <Link href="/privacy" className="transition-colors hover:text-[#f2efe8]">Privacy</Link>

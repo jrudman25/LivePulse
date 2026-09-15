@@ -1,42 +1,50 @@
 import ChatRoom from "./ChatRoom";
 import Link from "next/link";
+import { cache } from "react";
+import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { auth } from "@clerk/nextjs/server";
 import { ArrowLeft, CalendarDays, LockKeyhole, MapPin } from "lucide-react";
 import ArenaStatsTracker from "./ArenaStatsTracker";
+import { parseEventDetails, type EventDetails } from "@/lib/events";
 
-type EventDetails = {
-  id: string;
-  title: string;
-  type?: string;
-  location?: string;
-  country?: string;
-  start_time?: string;
-  end_time?: string;
-};
+type EventFetchResult =
+  | { status: "ok"; event: EventDetails }
+  | { status: "not_found" }
+  | { status: "failed" };
+
+// Cached so generateMetadata and the page share one backend request
+const fetchEvent = cache(async (id: string): Promise<EventFetchResult> => {
+  try {
+    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
+    const res = await fetch(`${API_URL}/api/events/single?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    if (res.status === 404) {return { status: "not_found" };}
+    if (!res.ok) {return { status: "failed" };}
+    const event = parseEventDetails(await res.json(), id);
+    if (!event) {return { status: "failed" };}
+    return { status: "ok", event };
+  } catch (e) {
+    console.error("Failed to fetch event:", e);
+    return { status: "failed" };
+  }
+});
+
+export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
+  const { id } = await params;
+  const result = await fetchEvent(id);
+  return {
+    title: result.status === "ok" ? `${result.event.title} | LivePulse` : "Event room | LivePulse",
+  };
+}
 
 export default async function EventPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const { userId } = await auth();
 
-  let event: EventDetails = { id, title: "Live Session" };
-  let isEventFound = true;
-  let eventFetchFailed = false;
-  try {
-    const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-    const res = await fetch(`${API_URL}/api/events/single?id=${id}`, { cache: "no-store" });
-    if (res.ok) {
-      const data = await res.json();
-      event = { ...event, ...data, title: data.title || "Live Session" };
-    } else if (res.status === 404) {
-      isEventFound = false;
-    } else {
-      eventFetchFailed = true;
-    }
-  } catch (e) {
-    console.error("Failed to fetch event title:", e);
-    eventFetchFailed = true;
-  }
+  const result = await fetchEvent(id);
+  const isEventFound = result.status !== "not_found";
+  const eventFetchFailed = result.status === "failed";
+  const event: EventDetails = result.status === "ok" ? result.event : { id, title: "Live Session" };
 
   if (!isEventFound) {
     notFound();

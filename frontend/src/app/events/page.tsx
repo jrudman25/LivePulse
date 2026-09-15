@@ -1,11 +1,13 @@
+import type { Metadata } from "next";
 import EventFeed from "../EventFeed";
-import type { EventItem } from "../EventCard";
+import { isEventList, type EventItem } from "@/lib/events";
 import { auth } from "@clerk/nextjs/server";
 import { LockKeyhole } from "lucide-react";
 
-function isEventItem(value: unknown): value is EventItem {
-  return typeof value === "object" && value !== null && "id" in value && typeof value.id === "string" && "title" in value && typeof value.title === "string";
-}
+export const metadata: Metadata = {
+  title: "Event desk | LivePulse",
+  description: "Browse live concerts, sports, and shows happening in the next 24 hours and join their rooms.",
+};
 
 async function fetchEvents(userId: string | null, q: string): Promise<{ events: EventItem[]; failed: boolean }> {
   try {
@@ -22,7 +24,7 @@ async function fetchEvents(userId: string | null, q: string): Promise<{ events: 
     if (!res.ok) {return { events: [], failed: true };}
 
     const data: unknown = await res.json();
-    if (!Array.isArray(data) || !data.every(isEventItem)) {return { events: [], failed: true };}
+    if (!isEventList(data)) {return { events: [], failed: true };}
     return { events: data, failed: false };
   } catch (err) {
     console.error("Failed to fetch events from Go backend:", err);
