@@ -3,19 +3,12 @@
 import { useState, useEffect } from "react";
 import { Heart, Users } from "lucide-react";
 import { useAuth } from "@clerk/nextjs";
+import { useFavorite } from "@/hooks/useFavorite";
 
 export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
-  const [isFavorite, setIsFavorite] = useState(false);
+  const { isFavorite, setIsFavorite, isLiking, notice, toggleFavorite } = useFavorite(eventId);
   const { getToken, isSignedIn } = useAuth();
-  const [isLiking, setIsLiking] = useState(false);
   const [activeUsers, setActiveUsers] = useState<number | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!notice) {return;}
-    const timeoutId = setTimeout(() => setNotice(null), 3500);
-    return () => clearTimeout(timeoutId);
-  }, [notice]);
 
   useEffect(() => {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
@@ -23,7 +16,7 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
     // Poll Stats (skipped while the tab is hidden)
     const pollStats = () => {
       if (document.visibilityState === "hidden") {return;}
-      fetch(`${API_URL}/api/sessions/stats?session_id=${eventId}`)
+      fetch(`${API_URL}/api/sessions/stats?session_id=${eventId}`, { signal: AbortSignal.timeout(5000) })
         .then(r => r.json())
         .then(data => {
           if (data && data.active_user_count !== undefined) {
@@ -40,7 +33,8 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
       getToken().then(token => {
         if (!token) {return;}
         fetch(`${API_URL}/api/favorites`, {
-          headers: { "Authorization": `Bearer ${token}` }
+          headers: { "Authorization": `Bearer ${token}` },
+          signal: AbortSignal.timeout(8000)
         })
           .then(r => r.json())
           .then(data => {
@@ -53,31 +47,7 @@ export default function ArenaStatsTracker({ eventId }: { eventId: string }) {
     }
 
     return () => clearInterval(interval);
-  }, [eventId, isSignedIn, getToken]);
-
-  const toggleFavorite = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!isSignedIn) {
-      setNotice("Sign in to save events");
-      return;
-    }
-    setIsLiking(true);
-    try {
-      const token = await getToken();
-      const method = isFavorite ? "DELETE" : "POST";
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-      const res = await fetch(`${API_URL}/api/favorites`, {
-        method,
-        headers: { "Authorization": `Bearer ${token}`, "Content-Type": "application/json" },
-        body: JSON.stringify({ event_id: eventId })
-      });
-      if (res.ok) {setIsFavorite(!isFavorite);}
-    } catch (err) {
-      console.error("Failed to update favorite:", err);
-    } finally {
-      setIsLiking(false);
-    }
-  };
+  }, [eventId, isSignedIn, getToken, setIsFavorite]);
 
   return (
     <div className="mt-7 border-y border-[#45413c]">

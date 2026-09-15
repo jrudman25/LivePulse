@@ -19,6 +19,14 @@ jest.mock('next/navigation', () => ({
   useSearchParams: () => new URLSearchParams(),
 }));
 
+// Mock Clerk auth so the feed can render outside ClerkProvider in tests
+jest.mock('@clerk/nextjs', () => ({
+  useAuth: () => ({
+    getToken: jest.fn(async () => null),
+    isSignedIn: false,
+  }),
+}));
+
 const mockEvents = [
   { id: '1', type: 'Music', title: 'Coachella', country: 'US', location: 'California', is_favorite: true },
   { id: '2', type: 'Sports', title: 'World Cup', country: 'CA', location: 'Toronto', is_favorite: false }

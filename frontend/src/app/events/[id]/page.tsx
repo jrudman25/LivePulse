@@ -17,7 +17,7 @@ type EventFetchResult =
 const fetchEvent = cache(async (id: string): Promise<EventFetchResult> => {
   try {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-    const res = await fetch(`${API_URL}/api/events/single?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+    const res = await fetch(`${API_URL}/api/events/single?id=${encodeURIComponent(id)}`, { cache: "no-store", signal: AbortSignal.timeout(8000) });
     if (res.status === 404) {return { status: "not_found" };}
     if (!res.ok) {return { status: "failed" };}
     const event = parseEventDetails(await res.json(), id);

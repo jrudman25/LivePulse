@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useAuth } from "@clerk/nextjs";
 import { Search, SlidersHorizontal, X } from "lucide-react";
 import { useDebounce } from "use-debounce";
 import EventCard from "./EventCard";
@@ -28,6 +29,7 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [roomCounts, setRoomCounts] = useState<Record<string, number>>({});
+  const { getToken, isSignedIn } = useAuth();
 
   // Reset paginated state when the server payload changes (new search, refresh),
   // while preserving appended pages when the same events refetch unchanged.
@@ -96,7 +98,13 @@ export default function EventFeed({ initialEvents }: { initialEvents: EventItem[
       setLoadError(null);
       const q = debouncedQuery ? `&q=${encodeURIComponent(debouncedQuery)}` : "";
       const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-      const res = await fetch(`${API_URL}/api/events?offset=${offset}${q}`);
+      // Send the Clerk token so later pages keep favorite decoration.
+      const headers: Record<string, string> = {};
+      if (isSignedIn) {
+        const token = await getToken();
+        if (token) {headers["Authorization"] = `Bearer ${token}`;}
+      }
+      const res = await fetch(`${API_URL}/api/events?offset=${offset}${q}`, { headers, signal: AbortSignal.timeout(8000) });
       if (!res.ok) {throw new Error(`Event request failed with status ${res.status}`);}
 
       const data: unknown = await res.json();

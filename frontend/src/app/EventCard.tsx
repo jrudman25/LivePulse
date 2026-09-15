@@ -1,18 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowUpRight, Heart, Users } from "lucide-react";
-import { useAuth } from "@clerk/nextjs";
+import { useFavorite } from "@/hooks/useFavorite";
 import type { EventItem } from "@/lib/events";
 
 export type { EventItem };
 
 export default function EventCard({ event, index = 0, activeUsers, onFavoriteToggle }: { event: EventItem, index?: number, activeUsers?: number, onFavoriteToggle?: (_id: string, _isFav: boolean) => void }) {
-  const [isFavorite, setIsFavorite] = useState(Boolean(event.is_favorite));
-  const [notice, setNotice] = useState<string | null>(null);
-  const { getToken, isSignedIn } = useAuth();
-  const [isLiking, setIsLiking] = useState(false);
+  const { isFavorite, setIsFavorite, isLiking, notice, toggleFavorite } = useFavorite(event.id, Boolean(event.is_favorite));
 
   const [prevIsFavoriteProp, setPrevIsFavoriteProp] = useState(event.is_favorite);
   if (event.is_favorite !== prevIsFavoriteProp) {
@@ -20,43 +17,10 @@ export default function EventCard({ event, index = 0, activeUsers, onFavoriteTog
     setIsFavorite(Boolean(event.is_favorite));
   }
 
-  useEffect(() => {
-    if (!notice) {return;}
-    const timeoutId = setTimeout(() => setNotice(null), 3500);
-    return () => clearTimeout(timeoutId);
-  }, [notice]);
-
-  const toggleFavorite = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    if (!isSignedIn) {
-      setNotice("Sign in to save events");
-      return;
-    }
-
-    setIsLiking(true);
-    try {
-      const token = await getToken();
-      const method = isFavorite ? "DELETE" : "POST";
-      const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
-      const res = await fetch(`${API_URL}/api/favorites`, {
-        method,
-        headers: {
-          "Authorization": `Bearer ${token}`,
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({ event_id: event.id })
-      });
-
-      if (res.ok) {
-        setIsFavorite(!isFavorite);
-        if (onFavoriteToggle) {
-          onFavoriteToggle(event.id, !isFavorite);
-        }
-      }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLiking(false);
+  const handleToggle = async (e: React.MouseEvent) => {
+    const succeeded = await toggleFavorite(e);
+    if (succeeded && onFavoriteToggle) {
+      onFavoriteToggle(event.id, !isFavorite);
     }
   };
 
@@ -105,7 +69,7 @@ export default function EventCard({ event, index = 0, activeUsers, onFavoriteTog
       </div>
 
       <div className="relative z-10 flex items-center justify-between border-t border-[#45413c] px-4 py-3 md:flex-col md:border-t-0 md:border-l md:px-0 md:py-5">
-        <button onClick={toggleFavorite} disabled={isLiking} className={`grid h-10 w-10 place-items-center border transition-colors ${isFavorite ? "border-[#ed2f24] bg-[#ed2f24] text-[#fffaf2]" : "border-[#45413c] text-[#aaa49b] hover:border-[#f2efe8] hover:text-[#f2efe8]"}`} aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}>
+        <button onClick={handleToggle} disabled={isLiking} className={`grid h-10 w-10 place-items-center border transition-colors ${isFavorite ? "border-[#ed2f24] bg-[#ed2f24] text-[#fffaf2]" : "border-[#45413c] text-[#aaa49b] hover:border-[#f2efe8] hover:text-[#f2efe8]"}`} aria-label={isFavorite ? "Remove from favorites" : "Add to favorites"}>
           <Heart className="h-4 w-4" fill={isFavorite ? "currentColor" : "none"} aria-hidden="true" />
         </button>
         <ArrowUpRight className="h-5 w-5 text-[#67625b] transition-all group-hover:-translate-y-1 group-hover:translate-x-1 group-hover:text-[#f2efe8]" aria-hidden="true" />

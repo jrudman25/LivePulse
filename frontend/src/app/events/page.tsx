@@ -9,18 +9,22 @@ export const metadata: Metadata = {
   description: "Browse live concerts, sports, and shows happening in the next 24 hours and join their rooms.",
 };
 
-async function fetchEvents(userId: string | null, q: string): Promise<{ events: EventItem[]; failed: boolean }> {
+async function fetchEvents(token: string | null, q: string): Promise<{ events: EventItem[]; failed: boolean }> {
   try {
     const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080";
     let url = `${API_URL}/api/events`;
     const params = new URLSearchParams();
-    if (userId) {params.append("user_id", userId);}
     if (q) {params.append("q", q);}
 
     const qs = params.toString();
     if (qs) {url += `?${qs}`;}
 
-    const res = await fetch(url, { cache: "no-store" });
+    // Favorite state is derived server-side from the verified token; the
+    // backend no longer accepts a client-supplied user_id.
+    const headers: Record<string, string> = {};
+    if (token) {headers["Authorization"] = `Bearer ${token}`;}
+
+    const res = await fetch(url, { cache: "no-store", headers, signal: AbortSignal.timeout(8000) });
     if (!res.ok) {return { events: [], failed: true };}
 
     const data: unknown = await res.json();
@@ -34,10 +38,11 @@ async function fetchEvents(userId: string | null, q: string): Promise<{ events: 
 
 export default async function EventsPage({ searchParams }: { searchParams: Promise<{ [key: string]: string | string[] | undefined }> }) {
   const resolvedParams = await searchParams;
-  const { userId } = await auth();
+  const { userId, getToken } = await auth();
 
   const q = typeof resolvedParams.q === "string" ? resolvedParams.q : "";
-  const { events, failed } = await fetchEvents(userId, q);
+  const token = userId ? await getToken() : null;
+  const { events, failed } = await fetchEvents(token, q);
 
   return (
     <div className="mx-auto w-full max-w-[1600px] border-x border-[#45413c]">
