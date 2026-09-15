@@ -45,17 +45,19 @@ func (t *Tracker) InitializeSession(sessionID string, thresholds []int) {
 
 // CheckMilestones checks if any milestones were achieved based on current stats
 func (t *Tracker) CheckMilestones(sessionID string, stats *aggregation.SessionStats) {
-	t.mu.RLock()
-	sessionMilestones, exists := t.milestones[sessionID]
-	t.mu.RUnlock()
-
-	if !exists {
-		return
-	}
-
 	totalReactions := stats.GetTotalReactions()
 	activeUsers := int64(stats.GetActiveUserCount())
 
+	// Hold the write lock for the whole check/update pass so concurrent
+	// workers cannot race on Progress/Achieved, then notify after unlock.
+	t.mu.Lock()
+	sessionMilestones, exists := t.milestones[sessionID]
+	if !exists {
+		t.mu.Unlock()
+		return
+	}
+
+	var achievements []*MilestoneAchievement
 	for _, milestone := range sessionMilestones {
 		if milestone.Achieved {
 			continue // Already achieved
@@ -73,26 +75,28 @@ func (t *Tracker) CheckMilestones(sessionID string, stats *aggregation.SessionSt
 
 		// Update progress and check if just achieved
 		if milestone.UpdateProgress(currentValue) {
-			achievement := &MilestoneAchievement{
-				Milestone:    milestone,
+			achievements = append(achievements, &MilestoneAchievement{
+				Milestone:    *milestone, // snapshot while locked so marshaling never races
 				SessionID:    sessionID,
 				AchievedAt:   time.Now().UTC(),
 				CurrentValue: currentValue,
-			}
+			})
 
 			log.Printf("Milestone achieved! Session: %s, Type: %s, Threshold: %d, Current: %d",
 				sessionID, milestone.Type, milestone.Threshold, currentValue)
+		}
+	}
+	t.mu.Unlock()
 
-			// Notify about the achievement
-			if t.notifyFunc != nil {
-				go t.notifyFunc(achievement)
-			}
+	for _, achievement := range achievements {
+		if t.notifyFunc != nil {
+			go t.notifyFunc(achievement)
 		}
 	}
 }
 
-// GetSessionMilestones returns all milestones for a session
-func (t *Tracker) GetSessionMilestones(sessionID string) []*Milestone {
+// GetSessionMilestones returns copies of all milestones for a session
+func (t *Tracker) GetSessionMilestones(sessionID string) []Milestone {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -101,14 +105,15 @@ func (t *Tracker) GetSessionMilestones(sessionID string) []*Milestone {
 		return nil
 	}
 
-	// Return a copy to avoid race conditions
-	result := make([]*Milestone, len(milestones))
-	copy(result, milestones)
+	result := make([]Milestone, len(milestones))
+	for i, m := range milestones {
+		result[i] = *m
+	}
 	return result
 }
 
-// GetAchievedMilestones returns only the achieved milestones for a session
-func (t *Tracker) GetAchievedMilestones(sessionID string) []*Milestone {
+// GetAchievedMilestones returns copies of the achieved milestones for a session
+func (t *Tracker) GetAchievedMilestones(sessionID string) []Milestone {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
@@ -117,10 +122,10 @@ func (t *Tracker) GetAchievedMilestones(sessionID string) []*Milestone {
 		return nil
 	}
 
-	var achieved []*Milestone
+	var achieved []Milestone
 	for _, m := range milestones {
 		if m.Achieved {
-			achieved = append(achieved, m)
+			achieved = append(achieved, *m)
 		}
 	}
 	return achieved

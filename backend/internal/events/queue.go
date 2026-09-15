@@ -8,11 +8,10 @@ import (
 
 // Queue manages the event queue using a buffered channel
 type Queue struct {
-	events   chan *Event
-	size     int
-	mu       sync.RWMutex
-	closed   bool
-	draining bool
+	events chan *Event
+	size   int
+	mu     sync.RWMutex
+	closed bool
 }
 
 // NewQueue creates a new event queue with the specified buffer size
@@ -67,10 +66,6 @@ func (q *Queue) Close() {
 
 // Drain processes all remaining events in the queue
 func (q *Queue) Drain() []*Event {
-	q.mu.Lock()
-	q.draining = true
-	q.mu.Unlock()
-
 	var remaining []*Event
 	for event := range q.events {
 		remaining = append(remaining, event)

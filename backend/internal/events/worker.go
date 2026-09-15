@@ -34,7 +34,7 @@ func NewWorkerPool(queue *Queue, workerCount int, handler EventHandler) *WorkerP
 // Start launches all worker goroutines
 func (wp *WorkerPool) Start() {
 	log.Printf("Starting worker pool with %d workers", wp.workerCount)
-	
+
 	for i := 0; i < wp.workerCount; i++ {
 		wp.wg.Add(1)
 		go wp.worker(i)
@@ -44,9 +44,9 @@ func (wp *WorkerPool) Start() {
 // worker is the main loop for each worker goroutine
 func (wp *WorkerPool) worker(id int) {
 	defer wp.wg.Done()
-	
+
 	log.Printf("Worker %d started", id)
-	
+
 	for {
 		select {
 		case <-wp.ctx.Done():
@@ -59,11 +59,11 @@ func (wp *WorkerPool) worker(id int) {
 				log.Printf("Worker %d: queue closed or context cancelled", id)
 				return
 			}
-			
+
 			if event == nil {
 				continue
 			}
-			
+
 			// Process the event
 			if err := wp.handler(event); err != nil {
 				log.Printf("Worker %d: error processing event %s: %v", id, event.ID, err)
@@ -76,36 +76,36 @@ func (wp *WorkerPool) worker(id int) {
 // It waits for all workers to finish processing their current events
 func (wp *WorkerPool) Shutdown() {
 	log.Println("Shutting down worker pool...")
-	
+
 	// Signal all workers to stop
 	wp.cancel()
-	
+
 	// Wait for all workers to finish
 	wp.wg.Wait()
-	
+
 	log.Println("Worker pool shutdown complete")
 }
 
 // ShutdownWithDrain gracefully shuts down and processes remaining events
 func (wp *WorkerPool) ShutdownWithDrain() {
 	log.Println("Shutting down worker pool with drain...")
-	
+
 	// Close the queue to prevent new events
 	wp.queue.Close()
-	
+
 	// Process remaining events
 	remaining := wp.queue.Drain()
 	log.Printf("Processing %d remaining events", len(remaining))
-	
+
 	for _, event := range remaining {
 		if err := wp.handler(event); err != nil {
 			log.Printf("Error processing remaining event %s: %v", event.ID, err)
 		}
 	}
-	
+
 	// Cancel context and wait for workers
 	wp.cancel()
 	wp.wg.Wait()
-	
+
 	log.Println("Worker pool shutdown with drain complete")
 }

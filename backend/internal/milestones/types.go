@@ -28,10 +28,10 @@ type Milestone struct {
 
 // MilestoneAchievement represents a milestone that was just achieved
 type MilestoneAchievement struct {
-	Milestone    *Milestone `json:"milestone"`
-	SessionID    string     `json:"session_id"`
-	AchievedAt   time.Time  `json:"achieved_at"`
-	CurrentValue int64      `json:"current_value"`
+	Milestone    Milestone `json:"milestone"`
+	SessionID    string    `json:"session_id"`
+	AchievedAt   time.Time `json:"achieved_at"`
+	CurrentValue int64     `json:"current_value"`
 }
 
 // NewMilestone creates a new milestone
