@@ -4,6 +4,74 @@ LivePulse is a web application for discovering upcoming concerts, sports, and en
 
 ---
 
+## Local Kubernetes Lab (K3d)
+
+The local lab runs the Go backend, PostgreSQL, and Redis in a K3s cluster managed by K3d. Docker Desktop supplies the Docker Engine that runs the K3d node containers and builds the backend image. This setup uses the `k3d-livepulse-lab` Kubernetes context; Docker Desktop's optional built-in Kubernetes cluster is separate and is not needed.
+
+See [k8s/README.md](k8s/README.md) for first-time cluster setup, local Secrets, database and Redis manifests, and deployment details. The lab avoids the production Neon and Upstash endpoints.
+
+### Start the lab
+
+Start Docker Desktop and wait for its Linux container engine to be ready. Then run these commands from the repository root in PowerShell:
+
+```powershell
+docker info --format '{{.OSType}}' # should print linux
+k3d cluster start livepulse-lab
+kubectl config use-context k3d-livepulse-lab
+kubectl get nodes
+kubectl get pods,services,pvc -n livepulse
+kubectl rollout status deployment/livepulse-backend -n livepulse --timeout=180s
+```
+
+Keep the port-forward running in its own PowerShell window:
+
+```powershell
+kubectl port-forward service/livepulse-backend 18081:8080 -n livepulse
+```
+
+For local frontend development, set or update these values in `frontend/.env.local` while keeping the existing Clerk development credentials:
+
+```dotenv
+NEXT_PUBLIC_API_URL=http://localhost:18081
+NEXT_PUBLIC_WS_URL=ws://localhost:18081
+```
+
+These localhost values are for `npm run dev`. Configure the production API and WebSocket URLs in the deployment environment; `NEXT_PUBLIC_` values are embedded in the frontend when it is built.
+
+In another PowerShell window, run the Next.js development server:
+
+```powershell
+cd .\frontend
+npm run dev
+```
+
+Open `http://localhost:3000`. To verify backend and dependency health independently, run `curl.exe -i http://127.0.0.1:18081/health/ready`; the response should report PostgreSQL and Redis as `ok`.
+
+### Stop and resume
+
+Stop the frontend and port-forward with `Ctrl+C` in their PowerShell windows. To stop the K3d cluster and free its compute resources while retaining it for later use:
+
+```powershell
+k3d cluster stop livepulse-lab
+```
+
+Start it again later with `k3d cluster start livepulse-lab`, then select the `k3d-livepulse-lab` context and repeat the port-forward and frontend steps. The local PVC data is intended to survive a cluster stop/start. Deleting the cluster or the `livepulse` namespace can delete the lab data. If the cluster has been deleted, create it with `k3d cluster create livepulse-lab` and follow the first-time deployment steps in [k8s/README.md](k8s/README.md).
+
+### Rebuild the backend image
+
+After changing backend code, build and import the image into the K3d cluster, then restart the Deployment to use it:
+
+```powershell
+docker build -t livepulse-backend:dev -f backend/Dockerfile backend
+k3d image import livepulse-backend:dev --cluster livepulse-lab
+kubectl rollout restart deployment/livepulse-backend -n livepulse
+kubectl rollout status deployment/livepulse-backend -n livepulse --timeout=180s
+```
+
+The current backend keeps WebSocket hubs and aggregation state in process memory, so the lab uses one backend replica.
+
+---
+
 ## System Architecture
 
 LivePulse is organized as a monorepo with separate `frontend` and `backend` applications.

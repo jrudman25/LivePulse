@@ -1,40 +1,27 @@
-# ==========================================
-# 1. BUILD STAGE
-# ==========================================
-FROM golang:alpine AS builder
+FROM golang:1.27.3-alpine3.24 AS builder
 
-# Set the working directory directly inside the container
-WORKDIR /build
+WORKDIR /src
 
-# Pull in certificates (required for secure HTTPS fetch calls to Ticketmaster)
-RUN apk update && apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates
 
-# Copy the Go Modules manifests (this enables Docker caching so builds are blazing fast)
 COPY go.mod go.sum ./
 RUN go mod download
 
-# Copy the entirety of your backend source code
 COPY . .
+RUN mkdir -p /out \
+    && CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/livepulse-server ./cmd/server
 
-# Strip out unnecessary debug symbols and statically compile the server binary
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-w -s" -o /livepulse-server ./cmd/server
+FROM alpine:3.24.3
 
-# ==========================================
-# 2. DEPLOYMENT STAGE
-# ==========================================
-FROM alpine:latest
+RUN apk add --no-cache ca-certificates tzdata \
+    && addgroup -S -g 10001 livepulse \
+    && adduser -S -D -H -u 10001 -G livepulse livepulse
 
 WORKDIR /app
+COPY --from=builder --chown=10001:10001 /out/livepulse-server /app/livepulse-server
 
-# Copy the generated TLS certs from the builder stage
-COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/
-COPY --from=builder /usr/share/zoneinfo /usr/share/zoneinfo
+ENV SERVER_PORT=8080
+USER 10001:10001
 
-# Copy the raw compiled Go executable from the builder down to the final container
-COPY --from=builder /livepulse-server /app/livepulse-server
-
-# Tell Northflank exactly which port our server listens to natively!
 EXPOSE 8080
-
-# Fire up the engine automatically!
-CMD ["/app/livepulse-server"]
+ENTRYPOINT ["/app/livepulse-server"]

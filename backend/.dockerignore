@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+**/.env
+**/.env.*
+*.env
+*.env.*
+*.exe
+*.dll
+*.so
+*.dylib
+*.test
+coverage/
+vendor/
