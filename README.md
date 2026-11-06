@@ -4,6 +4,8 @@ LivePulse is a web application for discovering upcoming concerts, sports, and en
 
 **Live site:** [livepulse-hq.vercel.app](https://livepulse-hq.vercel.app)
 
+<img width="1597" height="992" alt="image" src="https://github.com/user-attachments/assets/5675c721-0b8f-46e3-bfb3-f1eb723ff953" />
+
 ---
 
 ## Features
