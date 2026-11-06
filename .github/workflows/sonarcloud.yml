@@ -53,6 +53,31 @@ jobs:
           distribution: temurin
           java-version: 21
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: npm ci --ignore-scripts
+
+      - name: Run frontend tests with coverage
+        working-directory: frontend
+        run: npx jest --coverage
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+
+      - name: Run backend tests with coverage
+        working-directory: backend
+        run: go test ./... -coverprofile=coverage.out
+
       - name: Analyze with SonarCloud
 
         # You can pin the exact commit or the version.
@@ -68,7 +93,9 @@ jobs:
             -Dsonar.projectKey=jrudman25_LivePulse
             -Dsonar.organization=jordan-rudman-key123
             -Dsonar.scanner.skipJreProvisioning=true
-            -Dsonar.coverage.exclusions=**/*.ps1,**/*.config.*,**/jest.setup.ts
+            -Dsonar.coverage.exclusions=**/*.ps1,**/*.config.*,**/jest.setup.ts,frontend/src/proxy.ts
+            -Dsonar.javascript.lcov.reportPaths=frontend/coverage/lcov.info
+            -Dsonar.go.coverage.reportPaths=backend/coverage.out
             -Dsonar.test.inclusions=**/*.test.ts,**/*.test.tsx,**/*_test.go
             # Comma-separated paths to directories containing main source files.
             #-Dsonar.sources= # optional, default is project base directory
