@@ -49,7 +49,7 @@ export default function RootLayout({
   return (
     <html lang="en" className="dark">
       <body className={`${body.variable} ${display.variable} ${mono.variable} min-h-screen bg-background text-foreground antialiased`}>
-        <ClerkProvider>
+        <ClerkProvider dynamic>
           <div className="relative flex min-h-screen flex-col bg-background">
             {/* Ambient Background Glows */}
             <div className="pointer-events-none fixed inset-0 -z-10 bg-[#11100f]" />
