@@ -4,6 +4,8 @@
 - This is a Next.js app with TypeScript
 - Use Tailwind CSS for styling
 - Use shadcn for UI components
+- The CSP is Clerk's strict nonce mode, set in `frontend/src/proxy.ts`. Any new external origin (API, images, frames, scripts) has to be added to the `directives` there. Baseline security headers live in `frontend/next.config.ts`.
+- `<ClerkProvider dynamic>` is required so nonces reach every page. Pages render per request.
 
 ## Backend Notes
 - This is a Go app
