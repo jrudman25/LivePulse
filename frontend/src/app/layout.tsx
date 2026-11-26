@@ -28,6 +28,19 @@ export const metadata: Metadata = {
   title: "LivePulse | The live event desk",
   description: "Find the room. Join the crowd. Follow live events as they happen.",
   manifest: "/manifest.json",
+  verification: {
+    google: "3Ah_oDSBF5hKvgd8-4h1ZuJBrc1ecSVJMY2F10BYPV4",
+  },
+  openGraph: {
+    type: "website",
+    siteName: "LivePulse",
+    title: "LivePulse | The live event desk",
+    description: "Find the room. Join the crowd. Follow live events as they happen.",
+    url: "/",
+  },
+  twitter: {
+    card: "summary_large_image",
+  },
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
