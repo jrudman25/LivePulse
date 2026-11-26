@@ -34,6 +34,8 @@ export async function generateMetadata({ params }: { params: Promise<{ id: strin
   const result = await fetchEvent(id);
   return {
     title: result.status === "ok" ? `${result.event.title} | LivePulse` : "Event room | LivePulse",
+    // Event rooms are ephemeral (24-hour window); keep them out of the index
+    robots: { index: false, follow: false },
   };
 }
 
